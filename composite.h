@@ -1,3 +1,10 @@
+/**
+ * Ian Sohl - 2015
+ * Copyright (c) 2015      Los Alamos National Security, LLC
+ *                         All rights reserved.
+ * Legion Image Composition - Main Header
+ */
+
 #ifndef COMPOSITE_H
 #define COMPOSITE_H
 

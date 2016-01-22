@@ -22,13 +22,6 @@ ifndef GASNET_ROOT
 $(error GASNET_ROOT is not defined)
 endif
 
-#ifndef QT_HOME
-#$(error QT_HOME is not defined)
-#endif
-
-#ifndef OPTIX_DIR
-#$(error OPTIX_DIR is not defined)
-#endif
 
 #Flags for directing the runtime makefile what to include
 DEBUG           ?= 0		# Include debugging symbols
@@ -40,16 +33,16 @@ CONDUIT := udp
 # Put the binary file name here
 OUTFILE		?= composite
 # List all the application source files here
-GEN_SRC		?= composite.cc DataMgr.cc #radical_inverse_jitter.cc isosurface_render_kernel.cc#better_mapper.cc radical_inverse_jitter.cc	# .cc files
-GEN_GPU_SRC	?= render_kernel.cu #CUDAMarchingCubes.cu #circuit_gpu.cu				# .cu files
-#GEN_GPU_PTX_SRC ?= constantbg.cu matrix_camera.cu mesh_hit.cu triangle_mesh.cu
+GEN_SRC		?= composite.cc DataMgr.cc 
+GEN_GPU_SRC	?= render_kernel.cu 
+
 
 # You can modify these variables, some will be appended to by the runtime makefile
-INC_FLAGS	?=#-I${QT_HOME} -I${OPTIX_DIR}/include -I${OPTIX_DIR}/include/optixu #-I${GASNET_ROOT}/include # -I${EIGEN_HOME} -I${QT_HOME}
-CC_FLAGS	?= -std=c++11 #-DREALM_BACKTRACE  
-NVCC_FLAGS	?= -std=c++11 #--gpu-architecture=sm_30  #-I${OPTIX_DIR}/include -I${QT_HOME}  #p--keep
+INC_FLAGS	?=
+CC_FLAGS	?= -std=c++11 
+NVCC_FLAGS	?= -std=c++11
 GASNET_FLAGS	?=
-LD_FLAGS	?= #-lcudart -L/usr/local/cuda-7.0//lib64 #-L${QT_HOME} -lcudart -lQtViewer -L${OPTIX_DIR}/lib64 -loptix -loptixu
+LD_FLAGS	?= 
 GPU_ARCH	:= sm_30
 
 ###########################################################################

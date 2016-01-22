@@ -1,3 +1,10 @@
+/**
+ * Ian Sohl & Xin Tong - 2015
+ * Copyright (c) 2015      Los Alamos National Security, LLC
+ *                         All rights reserved.
+ * Legion Image Composition - Ray Trace Rendering Code
+ */
+
 #ifndef RENDER_CU
 #define RENDER_CU
 
