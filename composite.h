@@ -1,49 +1,29 @@
-/**
- * Ian Sohl - 2015
- * Copyright (c) 2015      Los Alamos National Security, LLC
- *                         All rights reserved.
- * Legion Image Composition - Main Header
- */
-
 #ifndef COMPOSITE_H
 #define COMPOSITE_H
 
 
-//#define ISOSURFACE
-//#define QT
-
-#ifdef QT
-#include "interact.h"
-#endif
 #include "legion.h"
 #include "default_mapper.h"
+
 
 using namespace LegionRuntime::HighLevel;
 using namespace LegionRuntime::Accessor;
 
-enum TaskIDs {
-	TOP_LEVEL_TASK_ID,
-	COHERENCE_SIMULATION_TASK_ID,
-	COHERENCE_COMPOSITE_TASK_ID,
-	COMPOSITE_TASK_ID,
-	COMBINE_TASK_ID,
-	LOAD_TASK_ID,
-	DISPLAY_TASK_ID,
-	CREATE_TASK_ID,
-	CREATE_ISOSURFACE_TASK_ID,
-	RENDER_ISOSURFACE_TASK_ID,
-	CREATE_INTERFACE_TASK_ID,
-}; /**<  List of task identifiers for compositing  */
 
-enum FieldIDs {
+enum TaskIDs{
+	TOP_LEVEL_TASK_ID,
+	CREATE_TASK_ID,
+	DISPLAY_TASK_ID,
+	COMBINE_TASK_ID,
+	CREATE_INTERFACE_TASK_ID,
+};
+
+enum FieldIDs{
 	FID_META,
 	FID_VAL,
-	FID_VERTEX,
-	FID_NORMAL,
-	FID_NTRI,	//number of triangles
-}; /**< List of field identifiers */
+};
 
-#ifndef QT
+
 struct Movement{
 	float invPVM[16]; /**< Inverse PV Matrix for rendering */
 	float xdat;		  /**< X[3] value for composition ordering */
@@ -72,8 +52,6 @@ struct Movement{
 	}
 }; /**< Current data state */
 
-#endif
-
 struct compositeArguments{
 	int width;
 	int height;
@@ -81,13 +59,7 @@ struct compositeArguments{
 	int miny;
 	int maxy;
 	PhaseBarrier barrier;
-}; /**< Arguments needed by compositing control tasks */
-
-struct tripleArgument{
-	compositeArguments co;
-	compositeArguments co1;
-	compositeArguments co2;
-}; /**< Arguments needed by combination tasks */
+};
 
 struct DataPartition{
 	int xmin;
@@ -129,8 +101,6 @@ protected:
 	std::vector<Processor> all_cpus;
 	std::vector<Processor> all_gpus;
 };
-
-
 
 
 #endif

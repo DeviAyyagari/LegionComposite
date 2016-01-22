@@ -1,25 +1,13 @@
-/**
- * Ian Sohl & Xin Tong - 2015
- * Copyright (c) 2015      Los Alamos National Security, LLC
- *                         All rights reserved.
- * Legion Image Composition - Ray Trace Rendering Code
- */
-
 #ifndef RENDER_CU
 #define RENDER_CU
 
 #include "cuda.h"
 #include "cuda_runtime.h"
-// #include "cuda_runtime_api.h"
 #include "cuda_helper.h"
+#include "helper_math.h"
 
 
 #include "composite.h"
-#include "helper_math.h"
-#include "CUDAMarchingCubes.h"
-
-// #include "QMatrix4x4"
-
 
 typedef float VolumeType;
 
@@ -183,7 +171,6 @@ d_render(int imageW, int imageH,
 	};
 
 	if (hit){
-		// drawPixel(imgPtr,x,y,imageW,(float)1,(float)1,(float)0,(float)1);
 		// return;
 
 		if (tnear < 0.0f) tnear = 0.0f;     // clamp to near plane
@@ -196,18 +183,9 @@ d_render(int imageW, int imageH,
 
 		for (int i=0; i<maxSteps; i++){
 			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
-
-//				float sample = tex3D<float>(tex, pos.x, pos.y , pos.z);//interpolate(dataPtr,pos,partitionStart,partitionSize);//
 				float sample = interpolate(dataPtr,pos,partitionStart,partitionSize);
-				// lookup in transfer function texture
-				//		    float4 col = tex1D(transferTex, (sample-transferOffset)*transferScale);
 				float4 col;
-//				if(sample>=8.0/36.0 || sample<0){
-//					col=make_float4(0,0,0,0);
-//				}
-//				else{
-					col = cols[(int)floor(sample*8)];
-//				}
+				col = cols[(int)floor(sample*8)];
 				col.w *= density;
 
 				// "under" operator for back-to-front blending
@@ -246,154 +224,6 @@ int iDivUp(int a, int b){
 	return (a % b != 0) ? (a / b + 1) : (a / b);
 }
 
-template<typename T>
-inline T* GetDeviceArray(int nv)
-{
-    T* array;
-    if(cudaMalloc((void**) &array, sizeof(T) * nv) != cudaSuccess) {
-        std::cout<<"memory allocation failed..."<<std::endl;
-        exit(2);
-    }
-    return array;
-}
-
-#ifdef ISOSURFACE
-__host__
-void create_isosurface_task(const Task *task,
-		const std::vector<PhysicalRegion> &regions,
-		LegionRuntime::HighLevel::Context ctx, HighLevelRuntime *runtime){
-	compositeArguments co = *((compositeArguments*)task->args);
-
-	PhysicalRegion metadataPhysicalRegion = regions[0];
-	LogicalRegion metadataLogicalRegion = metadataPhysicalRegion.get_logical_region();
-	IndexSpace metadataIndexSpace = metadataLogicalRegion.get_index_space();
-	Domain totalDomain = runtime->get_index_space_domain(ctx,metadataIndexSpace);
-	Rect<1> totalRect = totalDomain.get_rect<1>();	// Get metadata value index
-
-
-	RegionAccessor<AccessorType::Generic, Image> filenameAccessor = regions[0].get_field_accessor(FID_META).typeify<Image>();
-	Image tmpimg = filenameAccessor.read(DomainPoint::from_point<1>(Point<1>(totalRect.lo.x[0])));	// Metadata for current render
-
-	RegionAccessor<AccessorType::Generic, float> dataAccessor = regions[2].get_field_accessor(FID_VAL).typeify<float>(); // Accessor for data
-
-
-	Domain dataDomain = runtime->get_index_space_domain(ctx,regions[2].get_logical_region().get_index_space());
-	Rect<1> dataRect = dataDomain.get_rect<1>();	// Get data size domain
-	Rect<1> dataSubRect;							// Empty filler rectangle
-	ByteOffset dataOffsets[1];						// Byte Offset object
-	float* dataPtr = dataAccessor.raw_rect_ptr<1>(dataRect,dataSubRect,dataOffsets); // Get raw framebuffer pointers
-		
-	
-	int nx = 216; int ny = 320; int nz = 320;	
-	//for the use of Kepler Texture Objects, refer these two links:
-	//http://devblogs.nvidia.com/parallelforall/cuda-pro-tip-kepler-texture-objects-improve-performance-and-flexibility/
-	//http://stackoverflow.com/questions/24981310/cuda-create-3d-texture-and-cudaarray3d-from-device-memory
-	//cudaArray Descriptor
-	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-	//cuda Array
-	cudaArray *d_cuArr;
-	checkCudaErrors(cudaMalloc3DArray(&d_cuArr, &channelDesc, make_cudaExtent(nx, ny, nz), 0));
-	cudaMemcpy3DParms copyParams = {0};
-
-    //Array creation
-    copyParams.srcPtr   = make_cudaPitchedPtr(dataPtr, nx*sizeof(float), ny, nz);
-    copyParams.dstArray = d_cuArr;
-    copyParams.extent   = make_cudaExtent(nx,ny,nz);
-    copyParams.kind     = cudaMemcpyDeviceToDevice;
-    checkCudaErrors(cudaMemcpy3D(&copyParams));
-    //Array creation End
-
-	// create texture object
-	cudaResourceDesc resDesc;
-	memset(&resDesc, 0, sizeof(resDesc));
-	resDesc.resType = cudaResourceTypeArray;
-	resDesc.res.array.array = d_cuArr;
-
-	cudaTextureDesc texDesc;
-	memset(&texDesc, 0, sizeof(texDesc));
-	texDesc.normalizedCoords = true;
-	texDesc.filterMode = cudaFilterModeLinear;	//this means trilinear interpolation
-	texDesc.addressMode[0] = cudaAddressModeBorder;   // border: outside is 0
-	texDesc.addressMode[1] = cudaAddressModeBorder;
-	texDesc.addressMode[2] = cudaAddressModeBorder;
-	texDesc.readMode = cudaReadModeElementType;
-	// create texture object: we only have to do this once!
-	cudaTextureObject_t tex=0;
-	cudaCreateTextureObject(&tex, &resDesc, &texDesc, NULL);
-	
-	
-	/***Computing Isosurface (Marching Cubes)***/
-	CUDAMarchingCubes* mc = new CUDAMarchingCubes();
-	mc->Initialize(make_uint3(nx, ny, nz));
-	float3* null_pointer = NULL;
-
-	
-	int totalVerts = 0;
-	float isovalue = 0.03;
-	mc->SetIsovalue(isovalue);
-
-	mc->SetVolumeData(dataPtr, tex,
-			null_pointer,
-			make_uint3(nx, ny, nz), make_float3(0,0,0), make_float3(nx, ny, nz), true);
-
-
-	//TODO: this boundary needs to be fixed in the real simulation
-	uint3 volstart = make_uint3(tmpimg.partition.xmin, tmpimg.partition.ymin, tmpimg.partition.zmin);
-	uint3 volend = make_uint3(tmpimg.partition.xmax - 1,tmpimg.partition.ymax - 1,tmpimg.partition.zmax - 1);
-	uint3 slabsz = volend - volstart + make_uint3(1,1,1);
-	printf("volstart: %d, %d, %d  \n", volstart.x, volstart.y, volstart.z);
-	printf("volend: %d, %d, %d  \n", volend.x, volend.y, volend.z);
-	mc->SetSubVolume(volstart, volend);
-
-	Domain surfaceDomain = runtime->get_index_space_domain(ctx,regions[1].get_logical_region().get_index_space());
-	Rect<1> surfaceRect = surfaceDomain.get_rect<1>();
-	Rect<1> surfaceSubRect;
-	ByteOffset surfaceOffsets[1];
-	
-	RegionAccessor<AccessorType::Generic, float3> VertexAccessor = regions[1].get_field_accessor(FID_VERTEX).typeify<float3>();
-	float3* VertexPtr = VertexAccessor.raw_rect_ptr<1>(surfaceRect,surfaceSubRect,surfaceOffsets);
-	RegionAccessor<AccessorType::Generic, float3> NormalAccessor = regions[1].get_field_accessor(FID_NORMAL).typeify<float3>();
-	float3* NormalPtr = NormalAccessor.raw_rect_ptr<1>(surfaceRect,surfaceSubRect,surfaceOffsets);
-
-	int chunkmaxverts = slabsz.x * slabsz.y * slabsz.z;
-	// float3* v3f_chunk_d = GetDeviceArray<float3>(chunkmaxverts);
-	// float3* n3f_chunk_d = GetDeviceArray<float3>(chunkmaxverts);
-	mc->computeIsosurface(VertexPtr, NormalPtr, (float3*)0, chunkmaxverts);
-	
-	int chunknumverts = mc->GetVertexCount();
-	float chunkArea = mc->computeSurfaceArea(VertexPtr, chunknumverts / 3);
-	printf("number of vertex: %d, surface area: %f \n", chunknumverts, chunkArea);
-	
-	Domain ntriSurfaceDomain = runtime->get_index_space_domain(ctx,regions[3].get_logical_region().get_index_space());
-	Rect<1> ntriSurfaceRect = ntriSurfaceDomain.get_rect<1>();
-	Rect<1> ntriSurfaceSubRect;
-	ByteOffset ntriSurfaceOffsets[1];
-	RegionAccessor<AccessorType::Generic, int> ntriAccessor = regions[3].get_field_accessor(FID_NTRI).typeify<int>();
-	ntriAccessor.write(DomainPoint::from_point<1>(Point<1>(0)),chunknumverts/3);
-	// int* ntriPtr = ntriAccessor.raw_rect_ptr<1>(ntriSurfaceRect,ntriSurfaceSubRect,ntriSurfaceOffsets);
-	// *ntriPtr = chunknumverts / 3;
-	
-	// //CHECKME: I have no clue if this is the proper way to iterate
-	// assert(chunkmaxverts==surfaceRect.volume());
-	// for(int i = 0; i < chunkmaxverts; ++i){
-	// 	VertexPtr[i] = v3f_chunk_d[i];
-	// 	NormalPtr[i] = n3f_chunk_d[i];
-	// }
-	
-
-	
-
-	
-
-	// cudaFree(v3f_chunk_d);
-	// cudaFree(n3f_chunk_d);
-
-	/********End of Marching Cubes*********/
-	cudaDestroyTextureObject(tex);
-}
-
-#endif
-
 __host__
 void create_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
@@ -403,34 +233,18 @@ void create_task(const Task *task,
 	 */
 	printf("Started Render\n");
 	
-	assert(regions.size()==3);
-	compositeArguments co = *((compositeArguments*)task->args);
+	assert(regions.size()==2);
 
-	PhysicalRegion metadataPhysicalRegion = regions[0];
-	LogicalRegion metadataLogicalRegion = metadataPhysicalRegion.get_logical_region();
-	IndexSpace metadataIndexSpace = metadataLogicalRegion.get_index_space();
-	Domain totalDomain = runtime->get_index_space_domain(ctx,metadataIndexSpace);
-	Rect<1> totalRect = totalDomain.get_rect<1>();	// Get metadata value index
-
-//	printf("1");
-//	printf("a");
-	RegionAccessor<AccessorType::Generic, Image> filenameAccessor = regions[0].get_field_accessor(FID_META).typeify<Image>();
-//	printf("b");
-	Image tmpimg = filenameAccessor.read(DomainPoint::from_point<1>(Point<1>(totalRect.lo.x[0])));	// Metadata for current render
-//	printf("c");
-//	printf("d");
-	RegionAccessor<AccessorType::Generic, float> dataAccessor = regions[2].get_field_accessor(FID_VAL).typeify<float>(); // Accessor for data
-//	printf("e");
-	RegionAccessor<AccessorType::Generic, float> imgAccessor = regions[1].get_field_accessor(FID_VAL).typeify<float>();	// And image
-//	printf("f");
+	Image tmpimg = *((Image*)task->args);	// Metadata for current render
+	RegionAccessor<AccessorType::Generic, float> dataAccessor = regions[1].get_field_accessor(FID_VAL).typeify<float>(); // Accessor for data
+	RegionAccessor<AccessorType::Generic, float> imgAccessor = regions[0].get_field_accessor(FID_VAL).typeify<float>();	// And image
 	float density = 0.05f;			// Arbitrary defined constants
 	float brightness = 1.0f;		// 	(should be moved into metadata)
 	float transferOffset = 0.0f;
 	float transferScale = 1.0f;
-	int width = co.width;			// Get total image size
-	int height = co.height;
+	int width = tmpimg.width;			// Get total image size
+	int height = tmpimg.height;
 
-//	printf("g");
 
 	float4x4 invPVMMatrix; // Copy over inverse PV Matrix from metadata
 	for(int i = 0; i < 4; ++i){
@@ -439,21 +253,19 @@ void create_task(const Task *task,
 		invPVMMatrix.m[i].z = tmpimg.invPVM[4*i+2];
 		invPVMMatrix.m[i].w = tmpimg.invPVM[4*i+3];
 	}
-//	printf("h");
 
 	dim3 blockSize = dim3(16,16);	// Define kernal execution block size
 	dim3 gridSize = dim3(iDivUp(width, blockSize.x), iDivUp(height, blockSize.y)); // Number of pixels per block
 
-//	printf("2");
 
-	Domain dataDomain = runtime->get_index_space_domain(ctx,regions[2].get_logical_region().get_index_space());
+	Domain dataDomain = runtime->get_index_space_domain(ctx,regions[1].get_logical_region().get_index_space());
 	Rect<1> dataRect = dataDomain.get_rect<1>();	// Get data size domain
 	Rect<1> dataSubRect;							// Empty filler rectangle
 	ByteOffset dataOffsets[1];						// Byte Offset object
 	float* dataPtr = dataAccessor.raw_rect_ptr<1>(dataRect,dataSubRect,dataOffsets); // Get raw framebuffer pointers
 	
 
-	Domain imgDomain = runtime->get_index_space_domain(ctx,regions[1].get_logical_region().get_index_space());
+	Domain imgDomain = runtime->get_index_space_domain(ctx,regions[0].get_logical_region().get_index_space());
 	Rect<1> imgRect = imgDomain.get_rect<1>();
 	Rect<1> imgSubRect;
 	ByteOffset imgOffsets[1];
@@ -462,60 +274,12 @@ void create_task(const Task *task,
 	int3 lowerBound = make_int3(tmpimg.partition.xmin, tmpimg.partition.ymin, tmpimg.partition.zmin);
 	int3 upperBound = make_int3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
 
-//	printf("3");
 
 	int nx = 512; int ny = 512; int nz = 182;
 
-	//for the use of Kepler Texture Objects, refer these two links:
-	//http://devblogs.nvidia.com/parallelforall/cuda-pro-tip-kepler-texture-objects-improve-performance-and-flexibility/
-	//http://stackoverflow.com/questions/24981310/cuda-create-3d-texture-and-cudaarray3d-from-device-memory
-	//cudaArray Descriptor
-	//cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-	//cuda Array
-//	cudaArray *d_cuArr;
-	//checkCudaErrors(cudaMalloc3DArray(&d_cuArr, &channelDesc, make_cudaExtent(nx, ny, nz), 0));
-//	cudaMemcpy3DParms copyParams = {0};
-
-//	printf("4");
-
-    //Array creation
-//    copyParams.srcPtr   = make_cudaPitchedPtr(dataPtr, nx*sizeof(float), ny, nz);
-//    copyParams.dstArray = d_cuArr;
-//    copyParams.extent   = make_cudaExtent(nx,ny,nz);
-//    copyParams.kind     = cudaMemcpyDeviceToDevice;
-    //checkCudaErrors(cudaMemcpy3D(&copyParams));
-    //Array creation End
-
-	// create texture object
-//	cudaResourceDesc resDesc;
-//	memset(&resDesc, 0, sizeof(resDesc));
-//	resDesc.resType = cudaResourceTypeArray;
-//	resDesc.res.array.array = d_cuArr;
-
-//	printf("5");
-
-//	cudaTextureDesc texDesc;
-//	memset(&texDesc, 0, sizeof(texDesc));
-//	texDesc.normalizedCoords = false;
-//	texDesc.filterMode = cudaFilterModeLinear;	//this means trilinear interpolation
-//	texDesc.addressMode[0] = cudaAddressModeBorder;   // border: outside is 0
-//	texDesc.addressMode[1] = cudaAddressModeBorder;
-//	texDesc.addressMode[2] = cudaAddressModeBorder;
-//	texDesc.readMode = cudaReadModeElementType;
-	// create texture object: we only have to do this once!
-//	cudaTextureObject_t tex=0;
-	//cudaCreateTextureObject(&tex, &resDesc, &texDesc, NULL);
-//	printf("6");
 	d_render<<<gridSize, blockSize>>>(width,height,lowerBound,upperBound - lowerBound + make_int3(1,1,1),make_int3(0,0,0),make_int3(nx,ny,nz),density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
-//	d_render<<<gridSize, blockSize>>>(width,height,make_int3(0,0,0),make_int3(nx,ny,nz),make_int3(0,0,0),make_int3(nx,ny,nz),density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
-//	printf("7");
-	//cudaDestroyTextureObject(tex);
-
-	//this following line causes the program to crash for unknown reason
-	//cudaFree(d_cuArr);
 
 	cudaDeviceSynchronize();
-//	printf("CUDA: %d",(int)tmpimg.order);
 
 }
 #endif
