@@ -8,6 +8,9 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <stdlib.h>
+#include <stdlib.h>     /* srand, rand */
+#include <time.h>       /* time */
 #include "composite.h"
 #include "DataMgr.h"
 
@@ -67,12 +70,45 @@ float pass0(float a){
 	return 0.0;
 }
 
+void cpu_draw_task(const Task *task,
+		const std::vector<PhysicalRegion> &regions,
+		Context ctx, HighLevelRuntime *runtime){
+	Image img = *((Image*)task->args);	// Task metadata
+	PhysicalRegion imgPhysicalRegion = regions[0];
+	imgPhysicalRegion.wait_until_valid();
+	Domain outDomain = runtime->get_index_space_domain(ctx,regions[0].get_logical_region().get_index_space());
+	Rect<1> outRect = outDomain.get_rect<1>();			// Get the size of the return image
+	RegionAccessor<AccessorType::Generic,float> outputAccessor = regions[0].get_field_accessor(FID_VAL).typeify<float>();
+//	cout << "Creating with x: " << img.xmin << "-" << img.xmax << " and y: " << img.ymin << "-" << img.ymax << endl;
+	srand(img.randomseed);
+	int primary = rand() % 3;
+	float c1 = 0.0;
+	float c2 = 0.0;
+	float c3 = 0.0;
+	if(primary==0) c1 = 1.0;
+	if(primary==1) c2 = 1.0;
+	if(primary==2) c3 = 1.0;
+	float c4 = 1.0;
+//	cout << "Vals: " << c1 << ", " << c2 << ", " << c3 << ", " << c4 << endl;
+	for(int y = img.ymin; y <= img.ymax; ++y){
+		for(int x = img.xmin; x <= img.xmax; ++x){
+			int p = (y * img.width + x) * 4;
+			if(p > outRect.hi.x[0]) assert(false);
+			if(p < outRect.lo.x[0]) assert(false);
+			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p)),c1);
+			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p+1)),c2);
+			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p+2)),c3);
+			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p+3)),c4);
+		}
+	}
+
+}
 
 void create_interface_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata	
-	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
+	TaskLauncher loadLauncher(CPU_DRAW_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
 	loadLauncher.add_region_requirement(RegionRequirement(regions[0].get_logical_region(),WRITE_DISCARD,EXCLUSIVE,regions[0].get_logical_region()));
 	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
 	loadLauncher.add_region_requirement(RegionRequirement(regions[1].get_logical_region(),READ_ONLY,EXCLUSIVE,regions[1].get_logical_region()));
@@ -140,10 +176,17 @@ void combine_task(const Task *task,
 	compositeArguments co = *((compositeArguments*)task->args); // Get metadata properties
 	Domain outDomain = runtime->get_index_space_domain(ctx,regions[2].get_logical_region().get_index_space());
 	Rect<1> outRect = outDomain.get_rect<1>();			// Get the size of the return image
+	PhysicalRegion img0 = regions[0];
+	img0.wait_until_valid();
+	PhysicalRegion img1 = regions[1];
+	img1.wait_until_valid();
+	PhysicalRegion img2 = regions[2];
+	img2.wait_until_valid();
 	RegionAccessor<AccessorType::Generic,float> inputAccessor1 = regions[0].get_field_accessor(FID_VAL).typeify<float>();
 	RegionAccessor<AccessorType::Generic,float> inputAccessor2 = regions[1].get_field_accessor(FID_VAL).typeify<float>();
 	RegionAccessor<AccessorType::Generic,float> outputAccessor = regions[2].get_field_accessor(FID_VAL).typeify<float>();
 	compositeOver(inputAccessor1,inputAccessor2,outputAccessor,outRect.lo.x[0],outRect.hi.x[0],co); // Call the Composite 'Over' version
+//	cout << "Done with Combine" << endl;
 }
 
 void display_task(const Task *task,
@@ -166,11 +209,14 @@ void display_task(const Task *task,
 	ofstream oFile(filename, ios::out | ios::binary);
 	oFile.write(reinterpret_cast<char*>(&img.width),sizeof(int));
 	oFile.write(reinterpret_cast<char*>(&img.height),sizeof(int));
+//	int i = 0;
 	for(GenericPointInRectIterator<1> pir(imgBound); pir; pir++){
+//		if(++i % 1000 == 0) cout << "\tWritten " << i << endl;
 		float val = accessImg.read(DomainPoint::from_point<1>(pir.p));
 		oFile.write(reinterpret_cast<char*>(&val),sizeof(float));
 	}
 	oFile.close();
+	cout << "Finished Writing" << endl;
 }
 
 void setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1, LogicalRegion input2, LogicalRegion output, compositeArguments co){
@@ -241,6 +287,7 @@ void top_level_task(const Task *task,
 	}
 //	LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
 
+	srand(time(NULL));
 	
 	int numFiles = 20;							// Choose to create two partitions of the data
 	vector<Image> images;						// Array to hold the metadata values in
@@ -253,12 +300,18 @@ void top_level_task(const Task *task,
 		newimg.height = height;					// 		This is total image Width and Height
 		for(int j = 0; j < 16; ++j)
 			newimg.invPVM[j] = mov.invPVM[j];	// Copy the transformation matrix over
-		newimg.xmin = 0;						// Values for the extent of the render within the image
-		newimg.xmax = width-1;					// 		Set to be the entire size for now
-		newimg.ymin = 0;						//		Need to feed partition bounds into the modelview to get these
-		newimg.ymax = height-1;
+//		newimg.xmin = 0;						// Values for the extent of the render within the image
+//		newimg.xmax = width-1;					// 		Set to be the entire size for now
+//		newimg.ymin = 0;						//		Need to feed partition bounds into the modelview to get these
+//		newimg.ymax = height-1;
+		newimg.xmin = (i % 4) * (width/4);
+		newimg.xmax = ((i % 4) + 1) * (width/4) - 1;
+		newimg.ymin = (int)((float)i / 4.0f) * (height/5);
+		newimg.ymax = (int)(((float)i / 4.0f) + 1) * (height/5) - 1;
+//		cout << "Creating with x: " << newimg.xmin << "-" << newimg.xmax << " and y: " << newimg.ymin << "-" << newimg.ymax << endl;
 		newimg.partition = (DataPartition){xindex,i==numFiles-1 ? (int)datx : xindex+xspan+10,0,(int)daty, 0,(int)datz}; // Define the data partitioning
 		newimg.order = mov.xdat * (float)xindex;// Feed the partition value into the modelview to get the compositing order
+		newimg.randomseed = rand();
 		images.push_back(newimg);				// Add the metadata to the array
 		xindex += xspan;						// Iterate index values
 		imgLogicalRegions.push_back(runtime->create_logical_region(ctx,imgIndex,imgField));
@@ -268,13 +321,14 @@ void top_level_task(const Task *task,
 	cout << "Spawning with <" << images.size() << "> Images" << endl;
 	
 	for(unsigned i = 0; i < images.size(); ++i){
-		TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&images[i],sizeof(Image)));	// Spawn the renderer task
+		Image img = images[i];
+		TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
 		loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegions[i],READ_WRITE,EXCLUSIVE,imgLogicalRegions[i]));
 		loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
 		loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
 		loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
 		runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
-		cout << "Started CREATE " << i << endl;
+//		cout << "Started CREATE " << i << endl;
 	}
 	
 	compositeArguments co;
@@ -291,17 +345,18 @@ void top_level_task(const Task *task,
 		nodes.push_back(imgLogicalRegions[i]);
 	}
 	while(nodes.size()>1){
+		cout << "Compositing with " << nodes.size() << " nodes" << endl;
 		vector<LogicalRegion> oldnodes = nodes;
 		nodes.clear();
 //		cout << "Starting layer with " << oldnodes.size() << " nodes" << endl;
 		while(oldnodes.size() > 1){
 			LogicalRegion output = runtime->create_logical_region(ctx,imgIndex,imgField);
-			cout << "Compositing" << endl;
+//			cout << "Compositing" << endl;
 			setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
 			oldnodes.erase(oldnodes.begin(),oldnodes.begin()+2);
 			nodes.push_back(output);
 		}
-		if(oldnodes.size()) nodes.push_back(oldnodes[0]);
+		if(oldnodes.size()==1) nodes.push_back(oldnodes[0]);
 	}
 	
 	
@@ -469,6 +524,9 @@ int main(int argc, char **argv){
 	HighLevelRuntime::register_legion_task<create_interface_task>(CREATE_INTERFACE_TASK_ID,		// Register Qt Display connection task (Leaf Task)
 				Processor::LOC_PROC, true/*single*/, true/*index*/,
 				AUTO_GENERATE_ID, TaskConfigOptions(false, false), "create_interface_task");
+	HighLevelRuntime::register_legion_task<cpu_draw_task>(CPU_DRAW_TASK_ID,		// Register combination task (Leaf Task)
+			Processor::LOC_PROC, true/*single*/, true/*index*/,
+			AUTO_GENERATE_ID, TaskConfigOptions(true, false), "cpu_draw_task");
 	HighLevelRuntime::set_registration_callback(mapper_registration);
 	return HighLevelRuntime::start(argc, argv);
 }

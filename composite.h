@@ -23,6 +23,7 @@ enum TaskIDs{
 	DISPLAY_TASK_ID,
 	COMBINE_TASK_ID,
 	CREATE_INTERFACE_TASK_ID,
+	CPU_DRAW_TASK_ID,
 };
 
 enum FieldIDs{
@@ -87,6 +88,7 @@ struct Image{
 	int ymax;
 	DataPartition partition;
 	float order;
+	int randomseed;
 
 	bool operator<( const Image& rhs ) const
 	{ return order < rhs.order; }
