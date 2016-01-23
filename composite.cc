@@ -108,7 +108,7 @@ void create_interface_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata	
-	TaskLauncher loadLauncher(CPU_DRAW_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
+	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
 	loadLauncher.add_region_requirement(RegionRequirement(regions[0].get_logical_region(),WRITE_DISCARD,EXCLUSIVE,regions[0].get_logical_region()));
 	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
 	loadLauncher.add_region_requirement(RegionRequirement(regions[1].get_logical_region(),READ_ONLY,EXCLUSIVE,regions[1].get_logical_region()));
