@@ -168,13 +168,10 @@ d_render(int imageW, int imageH,
 	int hit = intersectBox(eyeRay, boxMin, boxMax, &tnear, &tfar);
 	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
 			make_float4(0.0, 0.0, 0.0, 0.0),
-			make_float4(1.0, 0.0, 0.0, 1.0),
-			make_float4(1.0, 0.5, 0.0, 1.0),
-			make_float4(1.0, 1.0, 0.0, 1.0),
-			make_float4(0.0, 1.0, 0.0, 1.0),
-			make_float4(0.0, 1.0, 1.0, 1.0),
-			make_float4(0.0, 0.0, 1.0, 1.0),
-			make_float4(1.0, 0.0, 1.0, 1.0)
+			make_float4(0.0, 0.0, 0.5, 0.5),
+			make_float4(0.5, 0.0, 0.0, 0.5),
+			make_float4(0.0, 0.0, 0.5, 0.5),
+			make_float4(0.0, 0.0, 0.5, 0.5),
 	};
 
 	if (hit){
@@ -192,7 +189,7 @@ d_render(int imageW, int imageH,
 			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
 				float sample = interpolate(dataPtr,pos,partitionStart,partitionSize);
 				float4 col;
-				col = cols[(int)floor(sample*8)];
+				col = cols[(int)floor(sample*5)];
 				col.w *= density;
 
 				// "under" operator for back-to-front blending
@@ -238,7 +235,7 @@ void create_task(const Task *task,
 	/**
 	 * Image rendering task
 	 */
-	printf("Started Render\n");
+//	printf("Started Render\n");
 	
 	assert(regions.size()==2);
 
@@ -287,6 +284,5 @@ void create_task(const Task *task,
 	d_render<<<gridSize, blockSize>>>(width,height,lowerBound,upperBound - lowerBound + make_int3(1,1,1),make_int3(0,0,0),make_int3(nx,ny,nz),density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
 
 	cudaDeviceSynchronize();
-
 }
 #endif

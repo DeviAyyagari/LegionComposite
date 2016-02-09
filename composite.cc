@@ -172,6 +172,7 @@ void combine_task(const Task *task,
 	/**
 	 * Combining task that actually composites images together
 	 */
+//	cout << "Starting combine" << endl;
 	assert(regions.size()==3);
 	compositeArguments co = *((compositeArguments*)task->args); // Get metadata properties
 	Domain outDomain = runtime->get_index_space_domain(ctx,regions[2].get_logical_region().get_index_space());
@@ -219,7 +220,7 @@ void display_task(const Task *task,
 	cout << "Finished Writing" << endl;
 }
 
-void setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1, LogicalRegion input2, LogicalRegion output, compositeArguments co){
+Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1, LogicalRegion input2, LogicalRegion output, compositeArguments co){
 	TaskLauncher combineLauncher(COMBINE_TASK_ID, TaskArgument(&co,sizeof(co)));
 	combineLauncher.add_region_requirement(RegionRequirement(input1,READ_ONLY,EXCLUSIVE,input1));
 	combineLauncher.add_field(0,FID_VAL);
@@ -227,7 +228,7 @@ void setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1, 
 	combineLauncher.add_field(1,FID_VAL);
 	combineLauncher.add_region_requirement(RegionRequirement(output,WRITE_DISCARD,EXCLUSIVE,output));
 	combineLauncher.add_field(2,FID_VAL);
-	runtime->execute_task(ctx,combineLauncher);
+	return runtime->execute_task(ctx,combineLauncher);
 }
 
 void top_level_task(const Task *task,
@@ -275,10 +276,11 @@ void top_level_task(const Task *task,
 	int width = 1000;	// Arbitrarily chosen to encourage X-Window performance
 	int height = 1000;
 	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));	// Inclusive range of pixels on the screen
-	Movement mov = {{192.739, -91.6592, -19954., 19369., 121.844, 291.541, -11628.9, \
-					11559., -255.241, 69.9583, -14594.3, 14119.3, -2.28331e-7, 
-					 3.24273e-8, -33.9024, 33.9025},1.0};
-
+//	Movement mov = {{192.739, -91.6592, -19954., 19369., 121.844, 291.541, -11628.9,
+//					11559., -255.241, 69.9583, -14594.3, 14119.3, -2.28331e-7,
+//					 3.24273e-8, -33.9024, 33.9025},1.0};
+	Movement mov = {{362.039, 256., 128., 439.777, 0., 362.039, -181.019, -18.3848, \
+			362.039, -256., -128., -86.2233, 0., 0., 0., 1.},1.0};
 	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound)); // Set up the final image region
 	FieldSpace imgField = runtime->create_field_space(ctx);
 	{
@@ -300,14 +302,14 @@ void top_level_task(const Task *task,
 		newimg.height = height;					// 		This is total image Width and Height
 		for(int j = 0; j < 16; ++j)
 			newimg.invPVM[j] = mov.invPVM[j];	// Copy the transformation matrix over
-//		newimg.xmin = 0;						// Values for the extent of the render within the image
-//		newimg.xmax = width-1;					// 		Set to be the entire size for now
-//		newimg.ymin = 0;						//		Need to feed partition bounds into the modelview to get these
-//		newimg.ymax = height-1;
-		newimg.xmin = (i % 4) * (width/4);
-		newimg.xmax = ((i % 4) + 1) * (width/4) - 1;
-		newimg.ymin = (int)((float)i / 4.0f) * (height/5);
-		newimg.ymax = (int)(((float)i / 4.0f) + 1) * (height/5) - 1;
+		newimg.xmin = 0;						// Values for the extent of the render within the image
+		newimg.xmax = width-1;					// 		Set to be the entire size for now
+		newimg.ymin = 0;						//		Need to feed partition bounds into the modelview to get these
+		newimg.ymax = height-1;
+//		newimg.xmin = (i % 2) * (width/2);
+//		newimg.xmax = ((i % 2) + 1) * (width/2) - 1;
+//		newimg.ymin = (int)((float)i / 4.0f) * (height/5);
+//		newimg.ymax = (int)(((float)i / 4.0f) + 1) * (height/5) - 1;
 //		cout << "Creating with x: " << newimg.xmin << "-" << newimg.xmax << " and y: " << newimg.ymin << "-" << newimg.ymax << endl;
 		newimg.partition = (DataPartition){xindex,i==numFiles-1 ? (int)datx : xindex+xspan+10,0,(int)daty, 0,(int)datz}; // Define the data partitioning
 		newimg.order = mov.xdat * (float)xindex;// Feed the partition value into the modelview to get the compositing order
@@ -319,6 +321,8 @@ void top_level_task(const Task *task,
 	sort(images.rbegin(),images.rend());		// Sort the metadata in reverse value of order
 
 	cout << "Spawning with <" << images.size() << "> Images" << endl;
+	double ts_start, ts_end;
+	ts_start = Realm::Clock::current_time_in_microseconds();
 	
 	for(unsigned i = 0; i < images.size(); ++i){
 		Image img = images[i];
@@ -344,21 +348,26 @@ void top_level_task(const Task *task,
 	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
 		nodes.push_back(imgLogicalRegions[i]);
 	}
+	Future f;
 	while(nodes.size()>1){
-		cout << "Compositing with " << nodes.size() << " nodes" << endl;
+//		cout << "Compositing with " << nodes.size() << " nodes" << endl;
 		vector<LogicalRegion> oldnodes = nodes;
 		nodes.clear();
 //		cout << "Starting layer with " << oldnodes.size() << " nodes" << endl;
 		while(oldnodes.size() > 1){
 			LogicalRegion output = runtime->create_logical_region(ctx,imgIndex,imgField);
 //			cout << "Compositing" << endl;
-			setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
+			f = setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
 			oldnodes.erase(oldnodes.begin(),oldnodes.begin()+2);
 			nodes.push_back(output);
 		}
 		if(oldnodes.size()==1) nodes.push_back(oldnodes[0]);
 	}
 	
+	f.get_void_result();
+	ts_end = Realm::Clock::current_time_in_microseconds();
+	double sim_time = 1e-6 * (ts_end - ts_start);
+	printf("ELAPSED TIME = %7.3f s\n", sim_time);
 	
 	TaskLauncher displayLauncher(DISPLAY_TASK_ID, TaskArgument(&co,sizeof(co)));	// Spawn a task for sending to Qt
 	displayLauncher.add_region_requirement(RegionRequirement(nodes[0],READ_ONLY,EXCLUSIVE,nodes[0]));
