@@ -28,7 +28,7 @@ DEBUG           ?= 0		# Include debugging symbols
 OUTPUT_LEVEL    ?= LEVEL_DEBUG	# Compile time print level
 SHARED_LOWLEVEL ?= 0		# Use the shared low level
 ALT_MAPPERS     ?= 0		# Compile the alternative mappers
-CONDUIT := ibv
+CONDUIT := udp
 
 # Put the binary file name here
 OUTFILE		?= composite

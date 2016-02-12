@@ -234,14 +234,25 @@ Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1
 void top_level_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
-	unsigned int datx = 512;	// Manually set (for now) bounds of the volumetric data
-	unsigned int daty = 512;
-	unsigned int datz = 182;
+//	unsigned int datx = 640;	// Manually set (for now) bounds of the volumetric data
+//	unsigned int daty = 432;
+//	unsigned int datz = 640;
+
+//	unsigned int datx = 512;
+//	unsigned int daty = 512;
+//	unsigned int datz = 182;
+
+	unsigned int datx = 27;
+	unsigned int daty = 22;
+	unsigned int datz = 27;
+
 
 	cout << "Reading data from file..." << endl;
 	DataMgr* dataMgr = new DataMgr;					// Spawn Xin's data manager to load the volumetric data
-	const char *volumeFilename = "Bonsai1.raw"; 	// The current data file
-	dataMgr->loadRawFile(volumeFilename, datx, daty, datz, sizeof(short)); // Manual parameters for the size and shape
+//	const char *volumeFilename = "vort_mag.raw"; 	// The current data file
+	const char *volumeFilename = "/home/sci/sohl/Documents/chevron_O2_11/_0/_0_0.raw";
+//	const char *volumeFilename = "Bonsai1.raw"; 	// The current data file
+	dataMgr->loadRawFile(volumeFilename, datx, daty, datz); // Manual parameters for the size and shape
 	float *volume = (float*)dataMgr->GetData(); 	// Get a pointer to the loaded data in memory
 	size_t dim[3];
 	dataMgr->GetDataDim(dim);						// float check the dimensions
@@ -266,9 +277,15 @@ void top_level_task(const Task *task,
 		RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
 		// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
 		int i = 0;
+		float maxval = 0.0;
+		float minval = 1.0;
 		for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
+			maxval = volume[i] > maxval ? volume[i] : maxval;
+			minval = volume[i] < minval ? volume[i] : minval;
 			dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
 		}
+		cout << "Maximum Value: " << maxval << endl;
+		cout << "Minimum Value: " << minval << endl;
 		runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
 	}
 	cout << "Done loading data" << endl;
@@ -291,12 +308,12 @@ void top_level_task(const Task *task,
 
 	srand(time(NULL));
 	
-	int numFiles = 20;							// Choose to create two partitions of the data
+	int numFiles = 1;							// Choose to create two partitions of the data
 	vector<Image> images;						// Array to hold the metadata values in
 	int xindex = 0;								// Keep track of the partition number
 	vector<LogicalRegion> imgLogicalRegions;
 	for(int i = 0; i < numFiles; ++i){
-		int xspan = (int)(datz/numFiles);		// Split the data long the X-dimension
+		int xspan = (int)(datx/numFiles);		// Split the data long the X-dimension
 		Image newimg;							// Create a metadata object to hold values
 		newimg.width = width;					// This data gets sent to the renderer (necessary)
 		newimg.height = height;					// 		This is total image Width and Height

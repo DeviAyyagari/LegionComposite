@@ -18,7 +18,7 @@ public:
 
     ~DataMgr();
 
-    void* loadRawFile(const char *filename, int nx, int ny, int nz, int type_size);
+    void* loadRawFile(const char *filename, int nx, int ny, int nz);
 
 //    size_t GetDatasize();
 

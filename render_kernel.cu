@@ -167,11 +167,19 @@ d_render(int imageW, int imageH,
 	float tnear, tfar;
 	int hit = intersectBox(eyeRay, boxMin, boxMax, &tnear, &tfar);
 	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
-			make_float4(0.0, 0.0, 0.0, 0.0),
+			make_float4(0.0, 0.5, 0.0, 0.5),
 			make_float4(0.0, 0.0, 0.5, 0.5),
 			make_float4(0.5, 0.0, 0.0, 0.5),
 			make_float4(0.0, 0.0, 0.5, 0.5),
 			make_float4(0.0, 0.0, 0.5, 0.5),
+//			make_float4(0.0, 0.0, 0.0, 0.0),
+//			make_float4(1.0, 0.0, 0.0, 1.0),
+//			make_float4(1.0, 0.5, 0.0, 1.0),
+//			make_float4(1.0, 1.0, 0.0, 1.0),
+//			make_float4(0.0, 1.0, 0.0, 1.0),
+//			make_float4(0.0, 1.0, 1.0, 1.0),
+//			make_float4(0.0, 0.0, 1.0, 1.0),
+//			make_float4(1.0, 0.0, 1.0, 1.0)
 	};
 
 	if (hit){
@@ -279,7 +287,7 @@ void create_task(const Task *task,
 	int3 upperBound = make_int3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
 
 
-	int nx = 512; int ny = 512; int nz = 182;
+	int nx = 27; int ny = 22; int nz = 27;
 
 	d_render<<<gridSize, blockSize>>>(width,height,lowerBound,upperBound - lowerBound + make_int3(1,1,1),make_int3(0,0,0),make_int3(nx,ny,nz),density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
 
