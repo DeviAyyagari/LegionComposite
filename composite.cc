@@ -70,48 +70,45 @@ float pass0(float a){
 	return 0.0;
 }
 
-void cpu_draw_task(const Task *task,
-		const std::vector<PhysicalRegion> &regions,
-		Context ctx, HighLevelRuntime *runtime){
-	Image img = *((Image*)task->args);	// Task metadata
-	PhysicalRegion imgPhysicalRegion = regions[0];
-	imgPhysicalRegion.wait_until_valid();
-	Domain outDomain = runtime->get_index_space_domain(ctx,regions[0].get_logical_region().get_index_space());
-	Rect<1> outRect = outDomain.get_rect<1>();			// Get the size of the return image
-	RegionAccessor<AccessorType::Generic,float> outputAccessor = regions[0].get_field_accessor(FID_VAL).typeify<float>();
-//	cout << "Creating with x: " << img.xmin << "-" << img.xmax << " and y: " << img.ymin << "-" << img.ymax << endl;
-	srand(img.randomseed);
-	int primary = rand() % 3;
-	float c1 = 0.0;
-	float c2 = 0.0;
-	float c3 = 0.0;
-	if(primary==0) c1 = 1.0;
-	if(primary==1) c2 = 1.0;
-	if(primary==2) c3 = 1.0;
-	float c4 = 1.0;
-//	cout << "Vals: " << c1 << ", " << c2 << ", " << c3 << ", " << c4 << endl;
-	for(int y = img.ymin; y <= img.ymax; ++y){
-		for(int x = img.xmin; x <= img.xmax; ++x){
-			int p = (y * img.width + x) * 4;
-			if(p > outRect.hi.x[0]) assert(false);
-			if(p < outRect.lo.x[0]) assert(false);
-			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p)),c1);
-			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p+1)),c2);
-			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p+2)),c3);
-			outputAccessor.write(DomainPoint::from_point<1>(Point<1>(p+3)),c4);
-		}
-	}
-
-}
-
 void create_interface_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata	
+	DataMgr* dataMgr = new DataMgr;
+	dataMgr->loadRawFile(img.volumeFilename, img.partition.datx, img.partition.daty, img.partition.datz);
+	float *volume = (float*)dataMgr->GetData();
+
+	Rect<1> dataBound = Rect<1>(0,img.partition.datx*img.partition.daty*img.partition.datz-1);	// Indexing the region used to hold the data (linearized)
+	IndexSpace dataIndexSpace = runtime->create_index_space(ctx, Domain::from_rect<1>(dataBound)); //Create the Index Space (1 index per voxel)
+	FieldSpace dataFieldSpace = runtime->create_field_space(ctx);	// Simple field space
+	{
+		FieldAllocator allocator = runtime->create_field_allocator(ctx,dataFieldSpace);
+		allocator.allocate_field(sizeof(float),FID_VAL);			// Only requires one field
+	}
+	LogicalRegion dataLogicalRegion = runtime->create_logical_region(ctx,dataIndexSpace,dataFieldSpace); // Create the Logical Region
+	{																// Populate the region
+		RegionRequirement req(dataLogicalRegion, WRITE_DISCARD, EXCLUSIVE, dataLogicalRegion); // Filling requirement
+		req.add_field(FID_VAL);
+		InlineLauncher dataInlineLauncher(req);						// Inline launchers are simple
+
+
+		PhysicalRegion dataPhysicalRegion = runtime->map_region(ctx,dataInlineLauncher);	// Map to a physical region
+		dataPhysicalRegion.wait_until_valid();						// Should be pretty fast
+
+		RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
+		// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
+		int i = 0;
+		for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
+			dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
+		}
+		runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
+	}
+
+
 	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
 	loadLauncher.add_region_requirement(RegionRequirement(regions[0].get_logical_region(),WRITE_DISCARD,EXCLUSIVE,regions[0].get_logical_region()));
 	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-	loadLauncher.add_region_requirement(RegionRequirement(regions[1].get_logical_region(),READ_ONLY,EXCLUSIVE,regions[1].get_logical_region()));
+	loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
 	loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
 	runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
 	
@@ -231,127 +228,106 @@ Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1
 	return runtime->execute_task(ctx,combineLauncher);
 }
 
+vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
+	vector<LogicalRegion> imgs;
+	const char *datafilesFile = "/home/sci/sohl/Documents/chevron_O2_11/_dataFiles.in";
+	ifstream datafile;
+	datafile.open(datafilesFile);
+	char output[100];
+	if(!datafile.is_open()){
+		cout << "File could not be opened" << endl;
+		assert(false);
+	}
+	datafile >> output;
+	int num = stoi(output);
+	for(int i = 0; i < 5; ++i){
+		datafile >> output;
+		string dataFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + string(output);
+		ifstream infofile;
+		infofile.open(dataFilename);
+		if(!infofile.is_open()){
+			cout << "Info File could not be opened" << endl;
+			assert(false);
+		}
+		char info[100];
+		infofile >> info;
+		string volumeName(info);
+		infofile >> info;
+		int datx = atoi(info);
+		infofile >> info;
+		int daty = atoi(info);
+		infofile >> info;
+		int datz = atoi(info);
+
+		infofile >> info;
+		float  minx = atof(info);
+		infofile >> info;
+		float  maxx = atof(info);
+		infofile >> info;
+		float  miny = atof(info);
+		infofile >> info;
+		float  maxy = atof(info);
+		infofile >> info;
+		float  minz = atof(info);
+		infofile >> info;
+		float  maxz = atof(info);
+
+//		infofile >> info;
+//		float min_scalar = atof(info);
+//		infofile >> info;
+//		float max_scalar = atof(info);
+
+		Image newimg;
+		newimg.width = width;
+		newimg.height = height;
+		newimg.partition = (DataPartition){datx,daty,datz,minx,maxx,miny,maxy,minz,maxz};
+		for(int j = 0; j < 16; ++j)
+			newimg.invPVM[j] = mov.invPVM[j];
+		newimg.order = minx * mov.xdat;
+		newimg.randomseed = rand();
+
+		string volumeFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + volumeName.substr(0,2) + "/" + volumeName;
+		strcpy(newimg.volumeFilename,volumeFilename.c_str());
+
+		LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
+
+		TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&newimg,sizeof(newimg)));	// Spawn the renderer task
+		loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
+		loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
+		runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
+
+		imgs.push_back(imgLogicalRegion);
+
+		if(i % (num/100)==0){
+			cout << "Spawning " << (int)((float)i/num*100) << "% done" << endl;
+		}
+	}
+	return imgs;
+}
+
 void top_level_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
-//	unsigned int datx = 640;	// Manually set (for now) bounds of the volumetric data
-//	unsigned int daty = 432;
-//	unsigned int datz = 640;
-
-//	unsigned int datx = 512;
-//	unsigned int daty = 512;
-//	unsigned int datz = 182;
-
-	unsigned int datx = 27;
-	unsigned int daty = 22;
-	unsigned int datz = 27;
-
 
 	cout << "Reading data from file..." << endl;
-	DataMgr* dataMgr = new DataMgr;					// Spawn Xin's data manager to load the volumetric data
-//	const char *volumeFilename = "vort_mag.raw"; 	// The current data file
-	const char *volumeFilename = "/home/sci/sohl/Documents/chevron_O2_11/_0/_0_0.raw";
-//	const char *volumeFilename = "Bonsai1.raw"; 	// The current data file
-	dataMgr->loadRawFile(volumeFilename, datx, daty, datz); // Manual parameters for the size and shape
-	float *volume = (float*)dataMgr->GetData(); 	// Get a pointer to the loaded data in memory
-	size_t dim[3];
-	dataMgr->GetDataDim(dim);						// float check the dimensions
-	assert(dim[0]==datx && dim[1]==daty && dim[2]==datz);
-	Rect<1> dataBound = Rect<1>(0,datx*daty*datz-1);	// Indexing the region used to hold the data (linearized)
-	IndexSpace dataIndexSpace = runtime->create_index_space(ctx, Domain::from_rect<1>(dataBound)); //Create the Index Space (1 index per voxel)
-	FieldSpace dataFieldSpace = runtime->create_field_space(ctx);	// Simple field space
-	{
-		FieldAllocator allocator = runtime->create_field_allocator(ctx,dataFieldSpace);
-		allocator.allocate_field(sizeof(float),FID_VAL);			// Only requires one field
-	}
-	LogicalRegion dataLogicalRegion = runtime->create_logical_region(ctx,dataIndexSpace,dataFieldSpace); // Create the Logical Region
-	{																// Populate the region
-		RegionRequirement req(dataLogicalRegion, WRITE_DISCARD, EXCLUSIVE, dataLogicalRegion); // Filling requirement
-		req.add_field(FID_VAL);
-		InlineLauncher dataInlineLauncher(req);						// Inline launchers are simple
 
 
-		PhysicalRegion dataPhysicalRegion = runtime->map_region(ctx,dataInlineLauncher);	// Map to a physical region
-		dataPhysicalRegion.wait_until_valid();						// Should be pretty fast
-
-		RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
-		// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
-		int i = 0;
-		float maxval = 0.0;
-		float minval = 1.0;
-		for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
-			maxval = volume[i] > maxval ? volume[i] : maxval;
-			minval = volume[i] < minval ? volume[i] : minval;
-			dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
-		}
-		cout << "Maximum Value: " << maxval << endl;
-		cout << "Minimum Value: " << minval << endl;
-		runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
-	}
-	cout << "Done loading data" << endl;
-
-	int width = 1000;	// Arbitrarily chosen to encourage X-Window performance
-	int height = 1000;
-	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));	// Inclusive range of pixels on the screen
-//	Movement mov = {{192.739, -91.6592, -19954., 19369., 121.844, 291.541, -11628.9,
-//					11559., -255.241, 69.9583, -14594.3, 14119.3, -2.28331e-7,
-//					 3.24273e-8, -33.9024, 33.9025},1.0};
-	Movement mov = {{362.039, 256., 128., 439.777, 0., 362.039, -181.019, -18.3848, \
-			362.039, -256., -128., -86.2233, 0., 0., 0., 1.},1.0};
-	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound)); // Set up the final image region
+	srand(time(NULL));
+	int width = 500;
+	int height = 500;
+	Movement mov = {{1.41421, 1., 1., 1.85355, 0., 1.41421, -1.41421, -1.41421, 1.41421, \
+			-1., -1., -1.14645, 0., 0., 0., 1.},1.0};
+	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));
+	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound));
 	FieldSpace imgField = runtime->create_field_space(ctx);
 	{
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
-		allocator.allocate_field(sizeof(float),FID_VAL);	// Use the VAL field value as well
+		allocator.allocate_field(sizeof(float),FID_VAL);
 	}
-//	LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
+	vector<LogicalRegion> imgLogicalRegions = loadRender(ctx, runtime, width, height, mov, imgIndex, imgField);
 
-	srand(time(NULL));
-	
-	int numFiles = 1;							// Choose to create two partitions of the data
-	vector<Image> images;						// Array to hold the metadata values in
-	int xindex = 0;								// Keep track of the partition number
-	vector<LogicalRegion> imgLogicalRegions;
-	for(int i = 0; i < numFiles; ++i){
-		int xspan = (int)(datx/numFiles);		// Split the data long the X-dimension
-		Image newimg;							// Create a metadata object to hold values
-		newimg.width = width;					// This data gets sent to the renderer (necessary)
-		newimg.height = height;					// 		This is total image Width and Height
-		for(int j = 0; j < 16; ++j)
-			newimg.invPVM[j] = mov.invPVM[j];	// Copy the transformation matrix over
-		newimg.xmin = 0;						// Values for the extent of the render within the image
-		newimg.xmax = width-1;					// 		Set to be the entire size for now
-		newimg.ymin = 0;						//		Need to feed partition bounds into the modelview to get these
-		newimg.ymax = height-1;
-//		newimg.xmin = (i % 2) * (width/2);
-//		newimg.xmax = ((i % 2) + 1) * (width/2) - 1;
-//		newimg.ymin = (int)((float)i / 4.0f) * (height/5);
-//		newimg.ymax = (int)(((float)i / 4.0f) + 1) * (height/5) - 1;
-//		cout << "Creating with x: " << newimg.xmin << "-" << newimg.xmax << " and y: " << newimg.ymin << "-" << newimg.ymax << endl;
-		newimg.partition = (DataPartition){xindex,i==numFiles-1 ? (int)datx : xindex+xspan+10,0,(int)daty, 0,(int)datz}; // Define the data partitioning
-		newimg.order = mov.xdat * (float)xindex;// Feed the partition value into the modelview to get the compositing order
-		newimg.randomseed = rand();
-		images.push_back(newimg);				// Add the metadata to the array
-		xindex += xspan;						// Iterate index values
-		imgLogicalRegions.push_back(runtime->create_logical_region(ctx,imgIndex,imgField));
-	}
-	sort(images.rbegin(),images.rend());		// Sort the metadata in reverse value of order
+	cout << "Done spawning renderers" << endl;
 
-	cout << "Spawning with <" << images.size() << "> Images" << endl;
-	double ts_start, ts_end;
-	ts_start = Realm::Clock::current_time_in_microseconds();
-	
-	for(unsigned i = 0; i < images.size(); ++i){
-		Image img = images[i];
-		TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
-		loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegions[i],READ_WRITE,EXCLUSIVE,imgLogicalRegions[i]));
-		loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-		loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
-		loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
-		runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
-//		cout << "Started CREATE " << i << endl;
-	}
-	
 	compositeArguments co;
 	co.width = width;			// Total image size
 	co.height = height;
@@ -359,7 +335,7 @@ void top_level_task(const Task *task,
 	co.miny = 0;				// Image possible extent (in Y-Dimension)
 	co.maxy = height-1;			// For first level, must be entire image
 	
-//	setupCombine(ctx,runtime,imgLogicalRegions[0],imgLogicalRegions[1],imgLogicalRegion,co);
+
 	// Build a blanced binary tree for composition
 	vector<LogicalRegion> nodes;
 	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
@@ -367,13 +343,10 @@ void top_level_task(const Task *task,
 	}
 	Future f;
 	while(nodes.size()>1){
-//		cout << "Compositing with " << nodes.size() << " nodes" << endl;
 		vector<LogicalRegion> oldnodes = nodes;
 		nodes.clear();
-//		cout << "Starting layer with " << oldnodes.size() << " nodes" << endl;
 		while(oldnodes.size() > 1){
 			LogicalRegion output = runtime->create_logical_region(ctx,imgIndex,imgField);
-//			cout << "Compositing" << endl;
 			f = setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
 			oldnodes.erase(oldnodes.begin(),oldnodes.begin()+2);
 			nodes.push_back(output);
@@ -382,9 +355,6 @@ void top_level_task(const Task *task,
 	}
 	
 	f.get_void_result();
-	ts_end = Realm::Clock::current_time_in_microseconds();
-	double sim_time = 1e-6 * (ts_end - ts_start);
-	printf("ELAPSED TIME = %7.3f s\n", sim_time);
 	
 	TaskLauncher displayLauncher(DISPLAY_TASK_ID, TaskArgument(&co,sizeof(co)));	// Spawn a task for sending to Qt
 	displayLauncher.add_region_requirement(RegionRequirement(nodes[0],READ_ONLY,EXCLUSIVE,nodes[0]));
@@ -450,7 +420,7 @@ void CompositeMapper::select_task_options(Task *task){
 			task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 //			cout << "Memory type: " << (task->regions[1].target_ranking[0] == Memory::NO_MEMORY) << endl;
 //			task->target_proc = DefaultMapper::select_random_processor(task_procs, Processor::TOC_PROC, machine);
-			cout << "Assigned GPU: " << task->target_proc.address_space() << endl;
+//			cout << "Assigned GPU: " << task->target_proc.address_space() << endl;
 		}
 		else{
 			task->target_proc = DefaultMapper::select_random_processor(task_procs, Processor::LOC_PROC, machine);
@@ -550,9 +520,6 @@ int main(int argc, char **argv){
 	HighLevelRuntime::register_legion_task<create_interface_task>(CREATE_INTERFACE_TASK_ID,		// Register Qt Display connection task (Leaf Task)
 				Processor::LOC_PROC, true/*single*/, true/*index*/,
 				AUTO_GENERATE_ID, TaskConfigOptions(false, false), "create_interface_task");
-	HighLevelRuntime::register_legion_task<cpu_draw_task>(CPU_DRAW_TASK_ID,		// Register combination task (Leaf Task)
-			Processor::LOC_PROC, true/*single*/, true/*index*/,
-			AUTO_GENERATE_ID, TaskConfigOptions(true, false), "cpu_draw_task");
 	HighLevelRuntime::set_registration_callback(mapper_registration);
 	return HighLevelRuntime::start(argc, argv);
 }

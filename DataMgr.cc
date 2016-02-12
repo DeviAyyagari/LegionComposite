@@ -90,7 +90,7 @@ void* DataMgr::loadRawFile(const char *filename, int nx, int ny, int nz)
 #if defined(_MSC_VER_)
     printf("Read '%s', %Iu bytes\n", filename, read);
 #else
-    printf("Read '%s', %zu bytes\n", filename, read);
+//    printf("Read '%s', %zu bytes\n", filename, read);
 #endif
 
     return data;

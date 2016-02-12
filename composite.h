@@ -70,25 +70,25 @@ struct compositeArguments{
 };
 
 struct DataPartition{
-	int xmin;
-	int xmax;
-	int ymin;
-	int ymax;
-	int zmin;
-	int zmax;
+	int datx;
+	int daty;
+	int datz;
+	float xmin;
+	float xmax;
+	float ymin;
+	float ymax;
+	float zmin;
+	float zmax;
 }; /**< Volumetric data partition bounding */
 
 struct Image{
 	int width;
 	int height;
 	float invPVM[16];
-	int xmin;
-	int xmax;
-	int ymin;
-	int ymax;
 	DataPartition partition;
 	float order;
 	int randomseed;
+	char volumeFilename[100];
 
 	bool operator<( const Image& rhs ) const
 	{ return order < rhs.order; }

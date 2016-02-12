@@ -94,7 +94,7 @@ void drawPixel(float* imgPtr, int x, int y, int imageW, float r, float g, float 
 }
 
 __device__
-float interpolate(float* dataPtr, float3 pos, int3 partitionStart, int3 partitionSize){
+float interpolate(float* dataPtr, float3 pos, int3 partitionSize){
 	/**
 	 * Replicate Texture functionality with a trilinear interpolant
 	 */
@@ -103,9 +103,9 @@ float interpolate(float* dataPtr, float3 pos, int3 partitionStart, int3 partitio
 	float3 complement = make_float3(1,1,1)-point;								// Compute the distance to the opposite corner
 	auto getPoint = [&](int x, int y, int z){									// Lambda function: Get a particular point from volumetric data
 	int3 p = originPoint + make_int3(x,y,z);									//		Only works on integer values
-		if(p.x>=partitionStart.x+partitionSize.x || p.x<partitionStart.x ||		// 	Make sure the point is in the array
-				p.y>=partitionStart.y+partitionSize.y || p.y<partitionStart.y || 
-				p.z>=partitionStart.z+partitionSize.z || p.z<partitionStart.z)
+		if(p.x>=partitionSize.x ||		// 	Make sure the point is in the array
+				p.y>=partitionSize.y || 
+				p.z>=partitionSize.z )
 			return 0.0f;
 		else
 			return dataPtr[p.z*partitionSize.y*partitionSize.x+p.y*partitionSize.x+p.x];	// Get the point from legion X->Y->Z
@@ -124,8 +124,7 @@ float interpolate(float* dataPtr, float3 pos, int3 partitionStart, int3 partitio
 
 __global__ void
 d_render(int imageW, int imageH,
-		int3 boxStart, int3 boxSize,
-		int3 partitionStart, int3 partitionSize,
+		int3 boxSize, float3 minBound, float3 maxBound,
 		float density, float brightness,
 		float transferOffset, float transferScale, 
 		float* imgPtr,
@@ -135,14 +134,18 @@ d_render(int imageW, int imageH,
 	 * Kernal renderer for individual ray tracing
 	 */
 
-	const int maxSteps = (int)sqrtf(partitionSize.x*partitionSize.x+partitionSize.y*partitionSize.y+partitionSize.z*partitionSize.z);	// The maximum possible number of steps
-	const float tstep = 1.0f;				// Distance to step
+	const int maxSteps = (int)sqrtf(boxSize.x*boxSize.x+boxSize.y*boxSize.y+boxSize.z*boxSize.z);	// The maximum possible number of steps
+	const float tstep = 0.1f;				// Distance to step
 	const float opacityThreshold = 0.95f;	// Arbitrarily defined alpha cutoff
 
-	const float3 boxMin = make_float3(boxStart.x, boxStart.y, boxStart.z); 	// Minimum bounds of data partition
-	const float3 boxMax = make_float3(boxMin.x + boxSize.x - 1,				// Maximum bound of partition
-			boxMin.y + boxSize.y - 1,
-			boxMin.z + boxSize.z - 1);
+	const float3 boxMin = make_float3(0, 0, 0); 	// Minimum bounds of data partition
+	const float3 boxMax = make_float3(boxSize.x - 1,				// Maximum bound of partition
+			boxSize.y - 1,
+			boxSize.z - 1);
+	
+	const float3 boxScale = make_float3(maxBound.x - minBound.x / boxSize.x,
+			maxBound.y - minBound.y / boxSize.y,
+			maxBound.z - minBound.z / boxSize.z);
 
 	uint x = blockIdx.x*blockDim.x + threadIdx.x;	// Current pixel x value
 	uint y = blockIdx.y*blockDim.y + threadIdx.y;	// Current pixel y value
@@ -165,7 +168,8 @@ d_render(int imageW, int imageH,
 
 	// find intersection with box
 	float tnear, tfar;
-	int hit = intersectBox(eyeRay, boxMin, boxMax, &tnear, &tfar);
+	int hit = intersectBox(eyeRay, minBound, maxBound, &tnear, &tfar);
+//	printf("o:<%f,%f,%f>, d:<%f,%f,%f>\n",eyeRay.o.x,eyeRay.o.y,eyeRay.o.z,eyeRay.d.x,eyeRay.d,y,eyeRay.d.z);
 	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
 			make_float4(0.0, 0.5, 0.0, 0.5),
 			make_float4(0.0, 0.0, 0.5, 0.5),
@@ -184,18 +188,19 @@ d_render(int imageW, int imageH,
 
 	if (hit){
 		// return;
+//		printf("Hit!\n");
 
 		if (tnear < 0.0f) tnear = 0.0f;     // clamp to near plane
 
 		// march along ray from front to back, accumulating color
 		float4 sum = make_float4(0.0f,0.0f,0.0f,0.0f);
 		float t = tnear;
-		float3 pos = eyeRay.o + eyeRay.d*tnear;
+		float3 pos = (eyeRay.o + eyeRay.d*tnear + minBound) / boxScale;
 		float3 step = eyeRay.d*tstep;
 
 		for (int i=0; i<maxSteps; i++){
 			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
-				float sample = interpolate(dataPtr,pos,partitionStart,partitionSize);
+				float sample = interpolate(dataPtr,pos,boxSize);
 				float4 col;
 				col = cols[(int)floor(sample*5)];
 				col.w *= density;
@@ -224,6 +229,7 @@ d_render(int imageW, int imageH,
 		sum *= brightness;
 		
 		drawPixel(imgPtr,x,y,imageW,(float)sum.x,(float)sum.y,(float)sum.z,(float)sum.w);
+//		drawPixel(imgPtr,x,y,imageW,0.5f,0.0f,0.0f,0.5f);
 	}
 }
 
@@ -287,9 +293,11 @@ void create_task(const Task *task,
 	int3 upperBound = make_int3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
 
 
-	int nx = 27; int ny = 22; int nz = 27;
+	int3 boxSize = make_int3(tmpimg.partition.datx,tmpimg.partition.daty,tmpimg.partition.datz);
+	float3 minBound = make_float3(tmpimg.partition.xmin,tmpimg.partition.ymin,tmpimg.partition.zmin);
+	float3 maxBound = make_float3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
 
-	d_render<<<gridSize, blockSize>>>(width,height,lowerBound,upperBound - lowerBound + make_int3(1,1,1),make_int3(0,0,0),make_int3(nx,ny,nz),density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
+	d_render<<<gridSize, blockSize>>>(width,height,boxSize,minBound,maxBound,density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
 
 	cudaDeviceSynchronize();
 }
