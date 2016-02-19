@@ -100,9 +100,9 @@ public:
 	CompositeMapper(Machine machine, HighLevelRuntime *rt, Processor local);
 public:
 	virtual void select_task_options(Task *task);
-	virtual void slice_domain(const Task *task, const Domain &domain, std::vector<DomainSplit> &slices);
+//	virtual void slice_domain(const Task *task, const Domain &domain, std::vector<DomainSplit> &slices);
 	virtual bool map_task(Task *task);
-	virtual bool map_inline(Inline *inline_operation);
+//	virtual bool map_inline(Inline *inline_operation);
 protected:
 	Processor top_proc;
 	std::set<Processor> task_procs;
