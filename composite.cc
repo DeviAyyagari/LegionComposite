@@ -493,12 +493,12 @@ void CompositeMapper::select_task_options(Task *task){
 //		}
 //		else{
 
-			std::set<Processor> all_procs_2;
-			machine.get_all_processors(all_procs_2);
-			task->target_proc = DefaultMapper::select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
-//			Image img = *((Image*)task->args);
-//			srand(img.randomseed);
-//			task->target_proc = all_cpus[rand() % 100];
+//			std::set<Processor> all_procs_2;
+//			machine.get_all_processors(all_procs_2);
+//			task->target_proc = DefaultMapper::select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
+			Image img = *((Image*)task->args);
+			srand(img.randomseed);
+			task->target_proc = all_cpus[rand() % 100];
 //			cout << "Assigned CPU: " << task->target_proc.address_space() << endl;
 //		}
 //	}
@@ -524,11 +524,11 @@ void CompositeMapper::select_task_options(Task *task){
 //	}
 //}
 
-bool CompositeMapper::map_task(Task *task){
-	bool ret = DefaultMapper::map_task(task);
-	cout << "Selected Proc: " << task->target_proc.address_space() << endl;
-	return ret;
-}
+//bool CompositeMapper::map_task(Task *task){
+//	bool ret = DefaultMapper::map_task(task);
+//	cout << "Selected Proc: " << task->target_proc.address_space() << endl;
+//	return ret;
+//}
 //	/**
 //	 * Control memory mapping for each task
 //	 */
