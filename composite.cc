@@ -73,6 +73,7 @@ float pass0(float a){
 void cpu_draw_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
+//	cout << "Drawing Task: " << runtime->get_executing_processor(ctx) << endl;
 	Image img = *((Image*)task->args);	// Task metadata
 	PhysicalRegion imgPhysicalRegion = regions[0];
 	imgPhysicalRegion.wait_until_valid();
@@ -173,6 +174,7 @@ void combine_task(const Task *task,
 	 * Combining task that actually composites images together
 	 */
 //	cout << "Starting combine" << endl;
+//	cout << "Combine Task: " << runtime->get_executing_processor(ctx) << endl;
 	assert(regions.size()==3);
 	compositeArguments co = *((compositeArguments*)task->args); // Get metadata properties
 	Domain outDomain = runtime->get_index_space_domain(ctx,regions[2].get_logical_region().get_index_space());
@@ -343,8 +345,8 @@ vector<LogicalRegion> loadRenderCPU(Context ctx, HighLevelRuntime *runtime, int 
 	vector<LogicalRegion> imgs;
 	vector<Future> futures;
 	int i = 0;
-	for(int y = 0; y < height; y+=100){
-		for(int x = 0; x < width; x+=100){
+	for(int y = 0; y < height; y+=20){
+		for(int x = 0; x < width; x+=20){
 			Image img;
 			img.width = width;
 			img.height = height;
@@ -435,9 +437,9 @@ CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) :
 	/**
 	 * Mapper for the compositor and renderer (will need to be modified for in-situ)
 	 */
-	set<Processor> all_procs;					// Prepare for the set of all processors available
-	machine.get_all_processors(all_procs);		// Populate set
-	top_proc = p;								// Current processor as top processor
+//	set<Processor> all_procs;					// Prepare for the set of all processors available
+//	machine.get_all_processors(all_procs);		// Populate set
+//	top_proc = p;								// Current processor as top processor
 
 //	set<Processor>::iterator iter = all_procs.begin();	// Step through all processors
 //	iter++;												// Skip the first one (used for main loop)
@@ -445,27 +447,27 @@ CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) :
 //		task_procs.insert(*iter);
 //	}
 
-
-	for (std::set<Processor>::const_iterator it = all_procs.begin(); it != all_procs.end(); it++){
-		Processor::Kind k = it->kind();	// Differentiate CPU and GPU processors
-		switch (k){
-		case Processor::LOC_PROC:		// If CPU (Latency Optimized Core)
-			all_cpus.push_back(*it);	// Add to CPU List
-			task_procs.insert(*it);
-			break;
-		case Processor::TOC_PROC:		// If GPU (Throughput Optimized Core)
-			all_gpus.push_back(*it);	// Add to GPU List
-			break;
-		default:						// Something else...?
-			break;
-		}
-	}
-	{
-		for (std::vector<Processor>::iterator itr = all_cpus.begin(); itr != all_cpus.end(); ++itr){
-			Memory sysmem = machine_interface.find_memory_kind(*itr, Memory::SYSTEM_MEM);	// Find the relevant memories
-			all_sysmems[*itr] = sysmem;
-		}
-	}
+	stealing_enabled = false;
+//	for (std::set<Processor>::const_iterator it = all_procs.begin(); it != all_procs.end(); it++){
+//		Processor::Kind k = it->kind();	// Differentiate CPU and GPU processors
+//		switch (k){
+//		case Processor::LOC_PROC:		// If CPU (Latency Optimized Core)
+//			all_cpus.push_back(*it);	// Add to CPU List
+//			task_procs.insert(*it);
+//			break;
+//		case Processor::TOC_PROC:		// If GPU (Throughput Optimized Core)
+//			all_gpus.push_back(*it);	// Add to GPU List
+//			break;
+//		default:						// Something else...?
+//			break;
+//		}
+//	}
+//	{
+//		for (std::vector<Processor>::iterator itr = all_cpus.begin(); itr != all_cpus.end(); ++itr){
+//			Memory sysmem = machine_interface.find_memory_kind(*itr, Memory::SYSTEM_MEM);	// Find the relevant memories
+//			all_sysmems[*itr] = sysmem;
+//		}
+//	}
 }
 
 void CompositeMapper::select_task_options(Task *task){
@@ -493,12 +495,12 @@ void CompositeMapper::select_task_options(Task *task){
 //		}
 //		else{
 
-//			std::set<Processor> all_procs_2;
-//			machine.get_all_processors(all_procs_2);
-//			task->target_proc = DefaultMapper::select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
-			Image img = *((Image*)task->args);
-			srand(img.randomseed);
-			task->target_proc = all_cpus[rand() % 100];
+			std::set<Processor> all_procs_2;
+			machine.get_all_processors(all_procs_2);
+			task->target_proc = DefaultMapper::select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
+//			Image img = *((Image*)task->args);
+//			srand(img.randomseed);
+//			task->target_proc = all_cpus[rand() % 100];
 //			cout << "Assigned CPU: " << task->target_proc.address_space() << endl;
 //		}
 //	}
