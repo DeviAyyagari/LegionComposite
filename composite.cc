@@ -73,14 +73,12 @@ float pass0(float a){
 void cpu_draw_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
-//	cout << "Drawing Task: " << runtime->get_executing_processor(ctx) << endl;
 	Image img = *((Image*)task->args);	// Task metadata
 	PhysicalRegion imgPhysicalRegion = regions[0];
 	imgPhysicalRegion.wait_until_valid();
 	Domain outDomain = runtime->get_index_space_domain(ctx,regions[0].get_logical_region().get_index_space());
 	Rect<1> outRect = outDomain.get_rect<1>();			// Get the size of the return image
 	RegionAccessor<AccessorType::Generic,float> outputAccessor = regions[0].get_field_accessor(FID_VAL).typeify<float>();
-//	cout << "Creating with x: " << img.xmin << "-" << img.xmax << " and y: " << img.ymin << "-" << img.ymax << endl;
 	srand(img.randomseed);
 	int primary = rand() % 3;
 	float c1 = 0.0;
@@ -90,7 +88,6 @@ void cpu_draw_task(const Task *task,
 	if(primary==1) c2 = 1.0;
 	if(primary==2) c3 = 1.0;
 	float c4 = 1.0;
-//	cout << "Vals: " << c1 << ", " << c2 << ", " << c3 << ", " << c4 << endl;
 	for(int y = img.partition.ymin; y < img.partition.ymax; ++y){
 		for(int x = img.partition.xmin; x < img.partition.xmax; ++x){
 			int p = (y * img.width + x) * 4;
@@ -109,12 +106,12 @@ void create_interface_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata	
-//	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
-//	loadLauncher.add_region_requirement(RegionRequirement(regions[0].get_logical_region(),WRITE_DISCARD,EXCLUSIVE,regions[0].get_logical_region()));
-//	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-//	loadLauncher.add_region_requirement(RegionRequirement(regions[1].get_logical_region(),READ_ONLY,EXCLUSIVE,regions[1].get_logical_region()));
-//	loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
-//	runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
+	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
+	loadLauncher.add_region_requirement(RegionRequirement(regions[0].get_logical_region(),WRITE_DISCARD,EXCLUSIVE,regions[0].get_logical_region()));
+	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
+	loadLauncher.add_region_requirement(RegionRequirement(regions[1].get_logical_region(),READ_ONLY,EXCLUSIVE,regions[1].get_logical_region()));
+	loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
+	runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
 	
 }
 
@@ -173,8 +170,6 @@ void combine_task(const Task *task,
 	/**
 	 * Combining task that actually composites images together
 	 */
-//	cout << "Starting combine" << endl;
-//	cout << "Combine Task: " << runtime->get_executing_processor(ctx) << endl;
 	assert(regions.size()==3);
 	compositeArguments co = *((compositeArguments*)task->args); // Get metadata properties
 	Domain outDomain = runtime->get_index_space_domain(ctx,regions[2].get_logical_region().get_index_space());
@@ -189,7 +184,6 @@ void combine_task(const Task *task,
 	RegionAccessor<AccessorType::Generic,float> inputAccessor2 = regions[1].get_field_accessor(FID_VAL).typeify<float>();
 	RegionAccessor<AccessorType::Generic,float> outputAccessor = regions[2].get_field_accessor(FID_VAL).typeify<float>();
 	compositeOver(inputAccessor1,inputAccessor2,outputAccessor,outRect.lo.x[0],outRect.hi.x[0],co); // Call the Composite 'Over' version
-//	cout << "Done with Combine" << endl;
 }
 
 void display_task(const Task *task,
@@ -212,9 +206,7 @@ void display_task(const Task *task,
 	ofstream oFile(filename, ios::out | ios::binary);
 	oFile.write(reinterpret_cast<char*>(&img.width),sizeof(int));
 	oFile.write(reinterpret_cast<char*>(&img.height),sizeof(int));
-//	int i = 0;
 	for(GenericPointInRectIterator<1> pir(imgBound); pir; pir++){
-//		if(++i % 1000 == 0) cout << "\tWritten " << i << endl;
 		float val = accessImg.read(DomainPoint::from_point<1>(pir.p));
 		oFile.write(reinterpret_cast<char*>(&val),sizeof(float));
 	}
@@ -233,113 +225,113 @@ Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1
 	return runtime->execute_task(ctx,combineLauncher);
 }
 
-//vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
-//	DataMgr* dataMgr = new DataMgr;
-//	vector<LogicalRegion> imgs;
-//	vector<Future> futures;
-//	const char *datafilesFile = "/home/sci/sohl/Documents/chevron_O2_11/_dataFiles.in";
-//	ifstream datafile;
-//	datafile.open(datafilesFile);
-//	char output[100];
-//	if(!datafile.is_open()){
-//		cout << "File could not be opened" << endl;
-//		assert(false);
-//	}
-//	datafile >> output;
-//	int num = stoi(output);
-//	for(int i = 0; i < 1; ++i){
-//		datafile >> output;
-//		string dataFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + string(output);
-//		ifstream infofile;
-//		infofile.open(dataFilename);
-//		if(!infofile.is_open()){
-//			cout << "Info File could not be opened" << endl;
-//			assert(false);
-//		}
-//		char info[100];
+vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
+	DataMgr* dataMgr = new DataMgr;
+	vector<LogicalRegion> imgs;
+	vector<Future> futures;
+	const char *datafilesFile = "/home/sci/sohl/Documents/chevron_O2_11/_dataFiles.in";
+	ifstream datafile;
+	datafile.open(datafilesFile);
+	char output[100];
+	if(!datafile.is_open()){
+		cout << "File could not be opened" << endl;
+		assert(false);
+	}
+	datafile >> output;
+	int num = stoi(output);
+	for(int i = 0; i < num; ++i){
+		datafile >> output;
+		string dataFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + string(output);
+		ifstream infofile;
+		infofile.open(dataFilename);
+		if(!infofile.is_open()){
+			cout << "Info File could not be opened" << endl;
+			assert(false);
+		}
+		char info[100];
+		infofile >> info;
+		string volumeName(info);
+		infofile >> info;
+		int datx = atoi(info);
+		infofile >> info;
+		int daty = atoi(info);
+		infofile >> info;
+		int datz = atoi(info);
+
+		infofile >> info;
+		float  minx = atof(info);
+		infofile >> info;
+		float  maxx = atof(info);
+		infofile >> info;
+		float  miny = atof(info);
+		infofile >> info;
+		float  maxy = atof(info);
+		infofile >> info;
+		float  minz = atof(info);
+		infofile >> info;
+		float  maxz = atof(info);
+
 //		infofile >> info;
-//		string volumeName(info);
+//		float min_scalar = atof(info);
 //		infofile >> info;
-//		int datx = atoi(info);
-//		infofile >> info;
-//		int daty = atoi(info);
-//		infofile >> info;
-//		int datz = atoi(info);
-//
-//		infofile >> info;
-//		float  minx = atof(info);
-//		infofile >> info;
-//		float  maxx = atof(info);
-//		infofile >> info;
-//		float  miny = atof(info);
-//		infofile >> info;
-//		float  maxy = atof(info);
-//		infofile >> info;
-//		float  minz = atof(info);
-//		infofile >> info;
-//		float  maxz = atof(info);
-//
-////		infofile >> info;
-////		float min_scalar = atof(info);
-////		infofile >> info;
-////		float max_scalar = atof(info);
-//
-//		Image newimg;
-//		newimg.width = width;
-//		newimg.height = height;
-//		newimg.partition = (DataPartition){datx,daty,datz,minx,maxx,miny,maxy,minz,maxz};
-//		for(int j = 0; j < 16; ++j)
-//			newimg.invPVM[j] = mov.invPVM[j];
-//		newimg.order = minx * mov.xdat;
-//		newimg.randomseed = rand();
-//
-//		string volumeFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + volumeName.substr(0,2) + "/" + volumeName;
-//		dataMgr->loadRawFile(volumeFilename.c_str(), datx, daty, datz);
-//		float *volume = (float*)dataMgr->GetData();
-//
-//		Rect<1> dataBound = Rect<1>(0,datx*daty*datz-1);	// Indexing the region used to hold the data (linearized)
-//		IndexSpace dataIndexSpace = runtime->create_index_space(ctx, Domain::from_rect<1>(dataBound)); //Create the Index Space (1 index per voxel)
-//		FieldSpace dataFieldSpace = runtime->create_field_space(ctx);	// Simple field space
-//		{
-//			FieldAllocator allocator = runtime->create_field_allocator(ctx,dataFieldSpace);
-//			allocator.allocate_field(sizeof(float),FID_VAL);			// Only requires one field
-//		}
-//		LogicalRegion dataLogicalRegion = runtime->create_logical_region(ctx,dataIndexSpace,dataFieldSpace); // Create the Logical Region
-//		{																// Populate the region
-//			RegionRequirement req(dataLogicalRegion, WRITE_DISCARD, EXCLUSIVE, dataLogicalRegion); // Filling requirement
-//			req.add_field(FID_VAL);
-//			InlineLauncher dataInlineLauncher(req);						// Inline launchers are simple
-//
-//
-//			PhysicalRegion dataPhysicalRegion = runtime->map_region(ctx,dataInlineLauncher);	// Map to a physical region
-//			dataPhysicalRegion.wait_until_valid();						// Should be pretty fast
-//
-//			RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
-//			// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
-//			int i = 0;
-//			for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
-//				dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
-//			}
-//			runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
-//		}
-//		for(int j = 0; j < 1000; ++j){
-//			LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
-//
-//			TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&newimg,sizeof(newimg)));	// Spawn the renderer task
-//			loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
-//			loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-//			loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
-//			loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
-//			futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
-//
-//			imgs.push_back(imgLogicalRegion);
-//		}
-//	}
-////	for(int i = 0; i < futures.size(); ++i){
-////		futures[i].get_void_result();
-////	}
-//	return imgs;
-//}
+//		float max_scalar = atof(info);
+
+		Image newimg;
+		newimg.width = width;
+		newimg.height = height;
+		newimg.partition = (DataPartition){datx,daty,datz,minx,maxx,miny,maxy,minz,maxz};
+		for(int j = 0; j < 16; ++j)
+			newimg.invPVM[j] = mov.invPVM[j];
+		newimg.order = minx * mov.xdat;
+		newimg.randomseed = rand();
+
+		string volumeFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + volumeName.substr(0,2) + "/" + volumeName;
+		dataMgr->loadRawFile(volumeFilename.c_str(), datx, daty, datz);
+		float *volume = (float*)dataMgr->GetData();
+
+		Rect<1> dataBound = Rect<1>(0,datx*daty*datz-1);	// Indexing the region used to hold the data (linearized)
+		IndexSpace dataIndexSpace = runtime->create_index_space(ctx, Domain::from_rect<1>(dataBound)); //Create the Index Space (1 index per voxel)
+		FieldSpace dataFieldSpace = runtime->create_field_space(ctx);	// Simple field space
+		{
+			FieldAllocator allocator = runtime->create_field_allocator(ctx,dataFieldSpace);
+			allocator.allocate_field(sizeof(float),FID_VAL);			// Only requires one field
+		}
+		LogicalRegion dataLogicalRegion = runtime->create_logical_region(ctx,dataIndexSpace,dataFieldSpace); // Create the Logical Region
+		{																// Populate the region
+			RegionRequirement req(dataLogicalRegion, WRITE_DISCARD, EXCLUSIVE, dataLogicalRegion); // Filling requirement
+			req.add_field(FID_VAL);
+			InlineLauncher dataInlineLauncher(req);						// Inline launchers are simple
+
+
+			PhysicalRegion dataPhysicalRegion = runtime->map_region(ctx,dataInlineLauncher);	// Map to a physical region
+			dataPhysicalRegion.wait_until_valid();						// Should be pretty fast
+
+			RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
+			// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
+			int i = 0;
+			for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
+				dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
+			}
+			runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
+		}
+		for(int j = 0; j < 1000; ++j){
+			LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
+
+			TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&newimg,sizeof(newimg)));	// Spawn the renderer task
+			loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
+			loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
+			loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
+			loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
+			futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
+
+			imgs.push_back(imgLogicalRegion);
+		}
+	}
+	for(int i = 0; i < futures.size(); ++i){
+		futures[i].get_void_result();
+	}
+	return imgs;
+}
 
 vector<LogicalRegion> loadRenderCPU(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
 	vector<LogicalRegion> imgs;
@@ -393,8 +385,6 @@ void top_level_task(const Task *task,
 	cout << "Done rendering" << endl;
 
 
-//	return;
-
 	compositeArguments co;
 	co.width = width;			// Total image size
 	co.height = height;
@@ -414,7 +404,6 @@ void top_level_task(const Task *task,
 		vector<LogicalRegion> oldnodes = nodes;
 		nodes.clear();
 		while(oldnodes.size() > 1){
-//			cout << "\t" << oldnodes.size() << " nodes left to spawn" << endl;
 			LogicalRegion output = runtime->create_logical_region(ctx,imgIndex,imgField);
 			f = setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
 			oldnodes.erase(oldnodes.begin(),oldnodes.begin()+2);
@@ -437,37 +426,7 @@ CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) :
 	/**
 	 * Mapper for the compositor and renderer (will need to be modified for in-situ)
 	 */
-//	set<Processor> all_procs;					// Prepare for the set of all processors available
-//	machine.get_all_processors(all_procs);		// Populate set
-//	top_proc = p;								// Current processor as top processor
-
-//	set<Processor>::iterator iter = all_procs.begin();	// Step through all processors
-//	iter++;												// Skip the first one (used for main loop)
-//	for(iter++; iter != all_procs.end();iter++){		// Add rest to a list of available processors for mapping
-//		task_procs.insert(*iter);
-//	}
-
 	stealing_enabled = false;
-//	for (std::set<Processor>::const_iterator it = all_procs.begin(); it != all_procs.end(); it++){
-//		Processor::Kind k = it->kind();	// Differentiate CPU and GPU processors
-//		switch (k){
-//		case Processor::LOC_PROC:		// If CPU (Latency Optimized Core)
-//			all_cpus.push_back(*it);	// Add to CPU List
-//			task_procs.insert(*it);
-//			break;
-//		case Processor::TOC_PROC:		// If GPU (Throughput Optimized Core)
-//			all_gpus.push_back(*it);	// Add to GPU List
-//			break;
-//		default:						// Something else...?
-//			break;
-//		}
-//	}
-//	{
-//		for (std::vector<Processor>::iterator itr = all_cpus.begin(); itr != all_cpus.end(); ++itr){
-//			Memory sysmem = machine_interface.find_memory_kind(*itr, Memory::SYSTEM_MEM);	// Find the relevant memories
-//			all_sysmems[*itr] = sysmem;
-//		}
-//	}
 }
 
 void CompositeMapper::select_task_options(Task *task){
@@ -479,99 +438,54 @@ void CompositeMapper::select_task_options(Task *task){
 	task->map_locally = false;
 	task->profile_task = false;
 	task->task_priority = 0;	// Can be used to specify some execution order (TO DO)
-//	if(task->get_depth()==0){	// If we're on the top-level task
-//		task->target_proc = local_proc; // Define it to the local processor
-//	}
-//	else{ // Otherwise define tasks on all of the other processors to reduce blocking
-//		if(task->task_id == CREATE_TASK_ID){ // Map the GPU tasks onto the GPU, though
-//			std::set<Processor> connectedProcs;
-//			machine.get_local_processors_by_kind(connectedProcs,Processor::TOC_PROC);
-////			machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
-////			cout << "Mapping with count: " << connectedProcs.size() << endl;
-//			task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
-////			cout << "Memory type: " << (task->regions[1].target_ranking[0] == Memory::NO_MEMORY) << endl;
-////			task->target_proc = DefaultMapper::select_random_processor(task_procs, Processor::TOC_PROC, machine);
-////			cout << "Assigned GPU: " << task->target_proc.address_space() << endl;
-//		}
-//		else{
-
+	if(task->task_id == CREATE_TASK_ID){ // Map the GPU tasks onto the GPU, though
+		std::set<Processor> connectedProcs;
+		machine.get_local_processors_by_kind(connectedProcs,Processor::TOC_PROC);
+		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
+		task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
+	}
+	else{
 			std::set<Processor> all_procs_2;
 			machine.get_all_processors(all_procs_2);
 			task->target_proc = DefaultMapper::select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
-//			Image img = *((Image*)task->args);
-//			srand(img.randomseed);
-//			task->target_proc = all_cpus[rand() % 100];
-//			cout << "Assigned CPU: " << task->target_proc.address_space() << endl;
-//		}
-//	}
+	}
 }
 
 
-//void CompositeMapper::slice_domain(const Task *task, const Domain &domain, std::vector<DomainSplit> &slices){
-//	/**
-//	 * Define how to split up Index Launch tasks
-//	 */
-//	std::vector<Processor> split_set;	// Find all processors to split on
-//	for (unsigned idx = 0; idx < 2; idx++){ // Add the approriate number for a binary decomposition
-//		split_set.push_back(DefaultMapper::select_random_processor(task_procs, Processor::LOC_PROC, machine));
-//	}
-//
-//	DefaultMapper::decompose_index_space(domain, split_set,1/*splitting factor*/, slices); // Split the index space on colors
-//	for (std::vector<DomainSplit>::iterator it = slices.begin(); it != slices.end(); it++){
-//		Rect<1> rect = it->domain.get_rect<1>(); // Step through colors and indicate recursion or not
-//		if (rect.volume() == 1) // Stop recursing when only one task remains
-//			it->recurse = false;
-//		else
-//			it->recurse = true;
-//	}
-//}
-
-//bool CompositeMapper::map_task(Task *task){
-//	bool ret = DefaultMapper::map_task(task);
-//	cout << "Selected Proc: " << task->target_proc.address_space() << endl;
-//	return ret;
-//}
-//	/**
-//	 * Control memory mapping for each task
-//	 */
-//	if (task->task_id == CREATE_TASK_ID){ // If running on the GPU
-//		Memory fb_mem = machine_interface.find_memory_kind(task->target_proc,Memory::GPU_FB_MEM); // Get FrameBuffer Memories
+bool CompositeMapper::map_task(Task *task){
+	/**
+	 * Control memory mapping for each task
+	 */
+	if (task->task_id == CREATE_TASK_ID){ // If running on the GPU
+		Memory fb_mem = machine_interface.find_memory_kind(task->target_proc,Memory::GPU_FB_MEM); // Get FrameBuffer Memories
 //		Memory zc_mem = machine_interface.find_memory_kind(task->target_proc,Memory::Z_COPY_MEM);
-//		assert(fb_mem.exists()); // Make sure it is supported
+		assert(fb_mem.exists()); // Make sure it is supported
 //		assert(zc_mem.exists());
-//		for (unsigned idx = 0; idx < task->regions.size(); idx++){ 	// Step through all regions
-//			task->regions[idx].target_ranking.push_back(fb_mem); 	//	and map them to the framebuffer memory
-//			task->regions[idx].virtual_map = false;
-//			task->regions[idx].enable_WAR_optimization = war_enabled;
-//			task->regions[idx].reduction_list = false;
-//			// Make everything SOA
-//			task->regions[idx].blocking_factor = task->regions[idx].max_blocking_factor;
-//		}
-//	}
-//	else{
-//		// Put everything else in the system memory
-//		Memory sys_mem = all_sysmems[task->target_proc];
-//		assert(sys_mem.exists());
-//		for (unsigned idx = 0; idx < task->regions.size(); idx++)
-//		{
-//			task->regions[idx].target_ranking.push_back(sys_mem);
-//			task->regions[idx].virtual_map = false;
-//			task->regions[idx].enable_WAR_optimization = war_enabled;
-//			task->regions[idx].reduction_list = false;
-//			// Make everything SOA
-//			task->regions[idx].blocking_factor = task->regions[idx].max_blocking_factor;
-//		}
-//	}
-//	return false;
-//}
-
-
-//bool CompositeMapper::map_inline(Inline *inline_operation){
-//	bool ret = DefaultMapper::map_inline(inline_operation); // Call the default mapper version of this function
-//	RegionRequirement& req = inline_operation->requirement;
-//	req.blocking_factor = req.max_blocking_factor;	// But overwrite the blocking factor to force SOA
-//	return ret;
-//}
+		for (unsigned idx = 0; idx < task->regions.size(); idx++){ 	// Step through all regions
+			task->regions[idx].target_ranking.push_back(fb_mem); 	//	and map them to the framebuffer memory
+			task->regions[idx].virtual_map = false;
+			task->regions[idx].enable_WAR_optimization = war_enabled;
+			task->regions[idx].reduction_list = false;
+			// Make everything SOA
+			task->regions[idx].blocking_factor = task->regions[idx].max_blocking_factor;
+		}
+	}
+	else{
+		// Put everything else in the system memory
+		Memory sys_mem = all_sysmems[task->target_proc];
+		assert(sys_mem.exists());
+		for (unsigned idx = 0; idx < task->regions.size(); idx++)
+		{
+			task->regions[idx].target_ranking.push_back(sys_mem);
+			task->regions[idx].virtual_map = false;
+			task->regions[idx].enable_WAR_optimization = war_enabled;
+			task->regions[idx].reduction_list = false;
+			// Make everything SOA
+			task->regions[idx].blocking_factor = task->regions[idx].max_blocking_factor;
+		}
+	}
+	return false;
+}
 
 
 void mapper_registration(Machine machine, HighLevelRuntime *rt, const std::set<Processor> &local_procs){
