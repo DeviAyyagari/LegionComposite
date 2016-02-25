@@ -344,6 +344,7 @@ vector<LogicalRegion> loadRenderCPU(Context ctx, HighLevelRuntime *runtime, int 
 			img.height = height;
 			img.partition = (DataPartition){0,0,0,(float)x,(float)(x+10),(float)y,(float)(y+10),0,0};
 			img.order = i++;
+			img.core = i % 40;
 			img.randomseed = rand();
 			LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
 			TaskLauncher loadLauncher(CPU_DRAW_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
@@ -395,21 +396,31 @@ void top_level_task(const Task *task,
 
 	// Build a blanced binary tree for composition
 	vector<LogicalRegion> nodes;
+	vector<int> cores;
 	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
 		nodes.push_back(imgLogicalRegions[i]);
+		cores.push_back(i % 40);
 	}
 	Future f;
 	while(nodes.size()>1){
 		cout << "Spawning " << nodes.size() << " nodes" << endl;
 		vector<LogicalRegion> oldnodes = nodes;
+		vector<int> oldcores = cores;
 		nodes.clear();
+		cores.clear();
 		while(oldnodes.size() > 1){
 			LogicalRegion output = runtime->create_logical_region(ctx,imgIndex,imgField);
+			co.core = oldcores[0];
 			f = setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
 			oldnodes.erase(oldnodes.begin(),oldnodes.begin()+2);
+			cores.push_back(oldcores[0]);
+			oldcores.erase(oldcores.begin(),oldcores.begin()+2);
 			nodes.push_back(output);
 		}
-		if(oldnodes.size()==1) nodes.push_back(oldnodes[0]);
+		if(oldnodes.size()==1) {
+			nodes.push_back(oldnodes[0]);
+			cores.push_back(oldcores[0]);
+		}
 	}
 	cout << "Done Spawning" << endl;
 	f.get_void_result();
@@ -427,6 +438,22 @@ CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) :
 	 * Mapper for the compositor and renderer (will need to be modified for in-situ)
 	 */
 	stealing_enabled = false;
+	set<Processor> all_procs;					// Prepare for the set of all processors available
+	machine.get_all_processors(all_procs);		// Populate set
+
+	set<Processor>::iterator iter = all_procs.begin();	// Step through all processors
+
+
+	for (std::set<Processor>::const_iterator it = all_procs.begin(); it != all_procs.end(); it++){
+		Processor::Kind k = it->kind();	// Differentiate CPU and GPU processors
+		switch (k){
+		case Processor::LOC_PROC:		// If CPU (Latency Optimized Core)
+			all_cpus.push_back(*it);	// Add to CPU List
+			break;
+		default:						// Something else...?
+			break;
+		}
+	}
 }
 
 void CompositeMapper::select_task_options(Task *task){
@@ -444,11 +471,13 @@ void CompositeMapper::select_task_options(Task *task){
 		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
 		task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 	}
+	else if(task->task_id == CPU_DRAW_TASK_ID){
+		Image img = *((Image*)task->args);
+		task->target_proc = all_cpus[img.core];
+	}
 	else if(task->task_id == COMBINE_TASK_ID){
-		std::set<Processor> connectedProcs;
-		machine.get_local_processors_by_kind(connectedProcs,Processor::LOC_PROC);
-		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
-		task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::LOC_PROC, machine);
+		compositeArguments co = *((compositeArguments*)task->args);
+		task->target_proc = all_cpus[co.core];
 	}
 	else{
 			std::set<Processor> all_procs_2;

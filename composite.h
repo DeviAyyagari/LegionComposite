@@ -67,6 +67,7 @@ struct compositeArguments{
 	int miny;
 	int maxy;
 	PhaseBarrier barrier;
+	int core;
 };
 
 struct DataPartition{
@@ -89,6 +90,7 @@ struct Image{
 	float order;
 	int randomseed;
 	char volumeFilename[100];
+	int core;
 
 	bool operator<( const Image& rhs ) const
 	{ return order < rhs.order; }
@@ -105,6 +107,7 @@ public:
 //	virtual bool map_inline(Inline *inline_operation);
 protected:
 	std::map<Processor, Memory> all_sysmems;
+	std::vector<Processor> all_cpus;
 };
 
 
