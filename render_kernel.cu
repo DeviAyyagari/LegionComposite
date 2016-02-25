@@ -169,27 +169,15 @@ d_render(int imageW, int imageH,
 	// find intersection with box
 	float tnear, tfar;
 	int hit = intersectBox(eyeRay, minBound, maxBound, &tnear, &tfar);
-//	printf("o:<%f,%f,%f>, d:<%f,%f,%f>\n",eyeRay.o.x,eyeRay.o.y,eyeRay.o.z,eyeRay.d.x,eyeRay.d,y,eyeRay.d.z);
 	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
 			make_float4(0.0, 0.5, 0.0, 0.5),
 			make_float4(0.0, 0.0, 0.5, 0.5),
 			make_float4(0.5, 0.0, 0.0, 0.5),
 			make_float4(0.0, 0.0, 0.5, 0.5),
 			make_float4(0.0, 0.0, 0.5, 0.5),
-//			make_float4(0.0, 0.0, 0.0, 0.0),
-//			make_float4(1.0, 0.0, 0.0, 1.0),
-//			make_float4(1.0, 0.5, 0.0, 1.0),
-//			make_float4(1.0, 1.0, 0.0, 1.0),
-//			make_float4(0.0, 1.0, 0.0, 1.0),
-//			make_float4(0.0, 1.0, 1.0, 1.0),
-//			make_float4(0.0, 0.0, 1.0, 1.0),
-//			make_float4(1.0, 0.0, 1.0, 1.0)
 	};
 
 	if (hit){
-		// return;
-//		printf("Hit!\n");
-
 		if (tnear < 0.0f) tnear = 0.0f;     // clamp to near plane
 
 		// march along ray from front to back, accumulating color
@@ -229,7 +217,6 @@ d_render(int imageW, int imageH,
 		sum *= brightness;
 		
 		drawPixel(imgPtr,x,y,imageW,(float)sum.x,(float)sum.y,(float)sum.z,(float)sum.w);
-//		drawPixel(imgPtr,x,y,imageW,0.5f,0.0f,0.0f,0.5f);
 	}
 }
 
@@ -249,7 +236,6 @@ void create_task(const Task *task,
 	/**
 	 * Image rendering task
 	 */
-//	printf("Started Render\n");
 	
 	assert(regions.size()==2);
 

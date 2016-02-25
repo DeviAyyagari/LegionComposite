@@ -101,14 +101,10 @@ public:
 public:
 	virtual void select_task_options(Task *task);
 //	virtual void slice_domain(const Task *task, const Domain &domain, std::vector<DomainSplit> &slices);
-//	virtual bool map_task(Task *task);
+	virtual bool map_task(Task *task);
 //	virtual bool map_inline(Inline *inline_operation);
 protected:
-	Processor top_proc;
-	std::set<Processor> task_procs;
 	std::map<Processor, Memory> all_sysmems;
-	std::vector<Processor> all_cpus;
-	std::vector<Processor> all_gpus;
 };
 
 

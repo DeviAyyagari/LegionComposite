@@ -327,7 +327,7 @@ vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int wid
 			imgs.push_back(imgLogicalRegion);
 		}
 	}
-	for(int i = 0; i < futures.size(); ++i){
+	for(unsigned int i = 0; i < futures.size(); ++i){
 		futures[i].get_void_result();
 	}
 	return imgs;
@@ -355,7 +355,7 @@ vector<LogicalRegion> loadRenderCPU(Context ctx, HighLevelRuntime *runtime, int 
 
 		}
 	}
-	for(int i = 0; i < futures.size(); ++i){
+	for(unsigned int i = 0; i < futures.size(); ++i){
 		futures[i].get_void_result();
 	}
 	return imgs;
@@ -444,6 +444,12 @@ void CompositeMapper::select_task_options(Task *task){
 		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
 		task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 	}
+	else if(task->task_id == COMBINE_TASK_ID){
+		std::set<Processor> connectedProcs;
+		machine.get_local_processors_by_kind(connectedProcs,Processor::LOC_PROC);
+		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
+		task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::LOC_PROC, machine);
+	}
 	else{
 			std::set<Processor> all_procs_2;
 			machine.get_all_processors(all_procs_2);
@@ -458,9 +464,7 @@ bool CompositeMapper::map_task(Task *task){
 	 */
 	if (task->task_id == CREATE_TASK_ID){ // If running on the GPU
 		Memory fb_mem = machine_interface.find_memory_kind(task->target_proc,Memory::GPU_FB_MEM); // Get FrameBuffer Memories
-//		Memory zc_mem = machine_interface.find_memory_kind(task->target_proc,Memory::Z_COPY_MEM);
 		assert(fb_mem.exists()); // Make sure it is supported
-//		assert(zc_mem.exists());
 		for (unsigned idx = 0; idx < task->regions.size(); idx++){ 	// Step through all regions
 			task->regions[idx].target_ranking.push_back(fb_mem); 	//	and map them to the framebuffer memory
 			task->regions[idx].virtual_map = false;
@@ -472,7 +476,7 @@ bool CompositeMapper::map_task(Task *task){
 	}
 	else{
 		// Put everything else in the system memory
-		Memory sys_mem = all_sysmems[task->target_proc];
+		Memory sys_mem = machine_interface.find_memory_kind(task->target_proc,Memory::SYSTEM_MEM);
 		assert(sys_mem.exists());
 		for (unsigned idx = 0; idx < task->regions.size(); idx++)
 		{
