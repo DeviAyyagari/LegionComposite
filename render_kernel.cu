@@ -76,7 +76,7 @@ int intersectBox(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *tfa
 
 	*tnear = largest_tmin;
 	*tfar = smallest_tmax;
-
+	
 	return smallest_tmax > largest_tmin;
 }
 
@@ -143,10 +143,10 @@ d_render(int imageW, int imageH,
 			boxSize.y - 1,
 			boxSize.z - 1);
 	
-	const float3 boxScale = make_float3(maxBound.x - minBound.x / boxSize.x,
-			maxBound.y - minBound.y / boxSize.y,
-			maxBound.z - minBound.z / boxSize.z);
-
+	const float3 boxScale = make_float3(abs(maxBound.x - minBound.x) / boxSize.x,
+			abs(maxBound.y - minBound.y) / boxSize.y,
+			abs(maxBound.z - minBound.z) / boxSize.z);
+	
 	uint x = blockIdx.x*blockDim.x + threadIdx.x;	// Current pixel x value
 	uint y = blockIdx.y*blockDim.y + threadIdx.y;	// Current pixel y value
 	
@@ -170,16 +170,18 @@ d_render(int imageW, int imageH,
 	float tnear, tfar;
 	int hit = intersectBox(eyeRay, minBound, maxBound, &tnear, &tfar);
 	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
-			make_float4(0.0, 0.5, 0.0, 0.5),
-			make_float4(0.0, 0.0, 0.5, 0.5),
-			make_float4(0.5, 0.0, 0.0, 0.5),
-			make_float4(0.0, 0.0, 0.5, 0.5),
-			make_float4(0.0, 0.0, 0.5, 0.5),
+			make_float4(0.0, 0.5, 0.0, 0.05),
+			make_float4(0.0, 0.0, 0.5, 0.05),
+			make_float4(0.5, 0.0, 0.0, 0.05),
+			make_float4(0.0, 0.0, 0.5, 0.05),
+			make_float4(0.0, 0.0, 0.5, 0.05),
 	};
 
 	if (hit){
 		if (tnear < 0.0f) tnear = 0.0f;     // clamp to near plane
-
+		
+//		drawPixel(imgPtr,x,y,imageW,0.5,0.0,0.0,0.1);
+//		return;
 		// march along ray from front to back, accumulating color
 		float4 sum = make_float4(0.0f,0.0f,0.0f,0.0f);
 		float t = tnear;
@@ -275,13 +277,18 @@ void create_task(const Task *task,
 	ByteOffset imgOffsets[1];
 	float* imgPtr = imgAccessor.raw_rect_ptr<1>(imgRect,imgSubRect,imgOffsets);	// For output image as well
 
-	int3 lowerBound = make_int3(tmpimg.partition.xmin, tmpimg.partition.ymin, tmpimg.partition.zmin);
-	int3 upperBound = make_int3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
+//	int3 lowerBound = make_int3(tmpimg.partition.xmin, tmpimg.partition.ymin, tmpimg.partition.zmin);
+//	int3 upperBound = make_int3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
 
 
 	int3 boxSize = make_int3(tmpimg.partition.datx,tmpimg.partition.daty,tmpimg.partition.datz);
-	float3 minBound = make_float3(tmpimg.partition.xmin,tmpimg.partition.ymin,tmpimg.partition.zmin);
-	float3 maxBound = make_float3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
+	float3 minBound = make_float3(tmpimg.partition.xmin + 2,tmpimg.partition.ymin + 2,tmpimg.partition.zmin + 2)*3;
+	float3 maxBound = make_float3(tmpimg.partition.xmax + 2,tmpimg.partition.ymax + 2,tmpimg.partition.zmax + 2)*3;
+//	
+//	printf("Min:<%f,%f,%f> Max:<%f,%f,%f>\n",minBound.x,minBound.y,minBound.z,maxBound.x,maxBound.y,maxBound.z);
+	
+//	float3 minBound = make_float3(0.0,0.0,0.0);
+//	float3 maxBound = make_float3(5.0,5.0,5.0);
 
 	d_render<<<gridSize, blockSize>>>(width,height,boxSize,minBound,maxBound,density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
 

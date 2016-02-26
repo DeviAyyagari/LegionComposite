@@ -105,11 +105,40 @@ void cpu_draw_task(const Task *task,
 void create_interface_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
-	Image img = *((Image*)task->args);	// Task metadata	
+	Image img = *((Image*)task->args);	// Task metadata
+	DataMgr* dataMgr = new DataMgr;
+	dataMgr->loadRawFile(img.volumeFilename, img.partition.datx, img.partition.daty, img.partition.datz);
+	float *volume = (float*)dataMgr->GetData();
+
+	Rect<1> dataBound = Rect<1>(0,img.partition.datx*img.partition.daty*img.partition.datz-1);	// Indexing the region used to hold the data (linearized)
+	IndexSpace dataIndexSpace = runtime->create_index_space(ctx, Domain::from_rect<1>(dataBound)); //Create the Index Space (1 index per voxel)
+	FieldSpace dataFieldSpace = runtime->create_field_space(ctx);	// Simple field space
+	{
+		FieldAllocator allocator = runtime->create_field_allocator(ctx,dataFieldSpace);
+		allocator.allocate_field(sizeof(float),FID_VAL);			// Only requires one field
+	}
+	LogicalRegion dataLogicalRegion = runtime->create_logical_region(ctx,dataIndexSpace,dataFieldSpace); // Create the Logical Region
+	{																// Populate the region
+		RegionRequirement req(dataLogicalRegion, WRITE_DISCARD, EXCLUSIVE, dataLogicalRegion); // Filling requirement
+		req.add_field(FID_VAL);
+		InlineLauncher dataInlineLauncher(req);						// Inline launchers are simple
+
+
+		PhysicalRegion dataPhysicalRegion = runtime->map_region(ctx,dataInlineLauncher);	// Map to a physical region
+		dataPhysicalRegion.wait_until_valid();						// Should be pretty fast
+
+		RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
+		// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
+		int i = 0;
+		for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
+			dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
+		}
+		runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
+	}
 	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
 	loadLauncher.add_region_requirement(RegionRequirement(regions[0].get_logical_region(),WRITE_DISCARD,EXCLUSIVE,regions[0].get_logical_region()));
 	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-	loadLauncher.add_region_requirement(RegionRequirement(regions[1].get_logical_region(),READ_ONLY,EXCLUSIVE,regions[1].get_logical_region()));
+	loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
 	loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
 	runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
 	
@@ -226,7 +255,6 @@ Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1
 }
 
 vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
-	DataMgr* dataMgr = new DataMgr;
 	vector<LogicalRegion> imgs;
 	vector<Future> futures;
 	const char *datafilesFile = "/home/sci/sohl/Documents/chevron_O2_11/_dataFiles.in";
@@ -239,9 +267,13 @@ vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int wid
 	}
 	datafile >> output;
 	int num = stoi(output);
+	int num_subregions = runtime->get_tunable_value(ctx, SUBREGION_TUNABLE, PARTITIONING_MAPPER_ID);
+	cout << "Loading from " << num << " files" << endl;
+	int i2 = 0;
 	for(int i = 0; i < num; ++i){
 		datafile >> output;
 		string dataFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + string(output);
+		if(!(i2++ % 10 == 0)) continue;
 		ifstream infofile;
 		infofile.open(dataFilename);
 		if(!infofile.is_open()){
@@ -284,47 +316,23 @@ vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int wid
 			newimg.invPVM[j] = mov.invPVM[j];
 		newimg.order = minx * mov.xdat;
 		newimg.randomseed = rand();
+		newimg.core = i % num_subregions;
 
+		memset(newimg.volumeFilename, '\0', 100);
 		string volumeFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + volumeName.substr(0,2) + "/" + volumeName;
-		dataMgr->loadRawFile(volumeFilename.c_str(), datx, daty, datz);
-		float *volume = (float*)dataMgr->GetData();
+		std::copy(volumeFilename.begin(), volumeFilename.end(), newimg.volumeFilename);
 
-		Rect<1> dataBound = Rect<1>(0,datx*daty*datz-1);	// Indexing the region used to hold the data (linearized)
-		IndexSpace dataIndexSpace = runtime->create_index_space(ctx, Domain::from_rect<1>(dataBound)); //Create the Index Space (1 index per voxel)
-		FieldSpace dataFieldSpace = runtime->create_field_space(ctx);	// Simple field space
-		{
-			FieldAllocator allocator = runtime->create_field_allocator(ctx,dataFieldSpace);
-			allocator.allocate_field(sizeof(float),FID_VAL);			// Only requires one field
-		}
-		LogicalRegion dataLogicalRegion = runtime->create_logical_region(ctx,dataIndexSpace,dataFieldSpace); // Create the Logical Region
-		{																// Populate the region
-			RegionRequirement req(dataLogicalRegion, WRITE_DISCARD, EXCLUSIVE, dataLogicalRegion); // Filling requirement
-			req.add_field(FID_VAL);
-			InlineLauncher dataInlineLauncher(req);						// Inline launchers are simple
+		LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
 
+		TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&newimg,sizeof(newimg)));	// Spawn the renderer task
+		loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
+		loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
+		futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
 
-			PhysicalRegion dataPhysicalRegion = runtime->map_region(ctx,dataInlineLauncher);	// Map to a physical region
-			dataPhysicalRegion.wait_until_valid();						// Should be pretty fast
+		imgs.push_back(imgLogicalRegion);
 
-			RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
-			// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
-			int i = 0;
-			for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
-				dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
-			}
-			runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
-		}
-		for(int j = 0; j < 1000; ++j){
-			LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
-
-			TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&newimg,sizeof(newimg)));	// Spawn the renderer task
-			loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
-			loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-			loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
-			loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
-			futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
-
-			imgs.push_back(imgLogicalRegion);
+		if(i % (int)((float)num / 10) == 0){
+			cout << "\t" << (int)((float)i / num * 100) << "% completed" << endl;
 		}
 	}
 	for(unsigned int i = 0; i < futures.size(); ++i){
@@ -371,10 +379,10 @@ void top_level_task(const Task *task,
 
 
 	srand(time(NULL));
-	int width = 500;
-	int height = 500;
-	Movement mov = {{362.039, 256., 128., 439.777, 0., 362.039, -181.019, -18.3848, \
-				362.039, -256., -128., -86.2233, 0., 0., 0., 1.},1.0};
+	int width = 1000;
+	int height = 1000;
+	Movement mov = {{7.07107, 5., 10., 18.5355, 0., 7.07107, -14.1421, -14.1421, 7.07107, \
+			-5., -10., -11.4645, 0., 0., 0., 1.},1.0};
 	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));
 	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound));
 	FieldSpace imgField = runtime->create_field_space(ctx);
@@ -382,7 +390,7 @@ void top_level_task(const Task *task,
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
 		allocator.allocate_field(sizeof(float),FID_VAL);
 	}
-	vector<LogicalRegion> imgLogicalRegions = loadRenderCPU(ctx, runtime, width, height, mov, imgIndex, imgField);
+	vector<LogicalRegion> imgLogicalRegions = loadRender(ctx, runtime, width, height, mov, imgIndex, imgField);
 
 	cout << "Done rendering" << endl;
 
@@ -460,7 +468,7 @@ void CompositeMapper::select_task_options(Task *task){
 		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
 		task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 	}
-	else if(task->task_id == CPU_DRAW_TASK_ID){
+	else if(task->task_id == CPU_DRAW_TASK_ID || task->task_id==CREATE_INTERFACE_TASK_ID){
 		Image img = *((Image*)task->args);
 		task->target_proc = all_cpus[img.core];
 	}
