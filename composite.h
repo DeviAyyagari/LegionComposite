@@ -31,6 +31,14 @@ enum FieldIDs{
 	FID_VAL,
 };
 
+enum {
+  SUBREGION_TUNABLE,
+};
+
+enum {
+  PARTITIONING_MAPPER_ID = 1,
+};
+
 
 struct Movement{
 	float invPVM[16]; /**< Inverse PV Matrix for rendering */
@@ -106,9 +114,19 @@ public:
 	virtual bool map_task(Task *task);
 //	virtual bool map_inline(Inline *inline_operation);
 protected:
-	std::map<Processor, Memory> all_sysmems;
+//	std::map<Processor, Memory> all_sysmems;
 	std::vector<Processor> all_cpus;
 };
 
+
+class PartitioningMapper : public DefaultMapper {
+public:
+  PartitioningMapper(Machine machine,
+      HighLevelRuntime *rt, Processor local);
+public:
+  virtual int get_tunable_value(const Task *task,
+                                TunableID tid,
+                                MappingTagID tag);
+};
 
 #endif
