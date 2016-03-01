@@ -127,7 +127,7 @@ void create_interface_task(const Task *task,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata
 	char filename[100];
-	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
+//	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
 //	sprintf(filename,"heptane.raw");
 	float *volume = loadRawFile(filename, img.partition.datx, img.partition.daty, img.partition.datz);
 
@@ -393,12 +393,20 @@ void top_level_task(const Task *task,
 
 	cout << "Reading data from file..." << endl;
 
-
 	srand(time(NULL));
 	int width = 1000;
 	int height = 1000;
 	Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
 			141.421, -100., -2000., -1883.58, 0., 0., 0., 1.},1.0};
+
+
+	const InputArgs &command_args = HighLevelRuntime::get_input_args();
+	if (command_args.argc > 1){
+		width = atoi(command_args.argv[1]);
+		height = width;
+		assert(width >= 0);
+	}
+
 	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));
 	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound));
 	FieldSpace imgField = runtime->create_field_space(ctx);
