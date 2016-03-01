@@ -355,6 +355,13 @@ vector<LogicalRegion> loadRenderCPU(Context ctx, HighLevelRuntime *runtime, int 
 
 			imgs.push_back(imgLogicalRegion);
 
+			if (i>=num_subregions){
+				for(unsigned int i = 0; i < futures.size(); ++i){
+					futures[i].get_void_result();
+				}
+				return imgs;
+			}
+
 		}
 	}
 	for(unsigned int i = 0; i < futures.size(); ++i){
