@@ -97,7 +97,9 @@ struct Image{
 	DataPartition partition;
 	float order;
 	int randomseed;
-	char volumeFilename[100];
+	int i;
+	int j;
+	int k;
 	int core;
 
 	bool operator<( const Image& rhs ) const

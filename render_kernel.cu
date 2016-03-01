@@ -71,8 +71,8 @@ int intersectBox(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *tfa
 	float3 tmax = fmaxf(ttop, tbot);
 
 	// find the largest tmin and the smallest tmax
-	float largest_tmin = fmaxf(fmaxf(tmin.x, tmin.y), fmaxf(tmin.x, tmin.z));
-	float smallest_tmax = fminf(fminf(tmax.x, tmax.y), fminf(tmax.x, tmax.z));
+	float largest_tmin = fmaxf(fmaxf(tmin.x, tmin.y), tmin.z);
+	float smallest_tmax = fminf(fminf(tmax.x, tmax.y), tmax.z);
 
 	*tnear = largest_tmin;
 	*tfar = smallest_tmax;
@@ -80,6 +80,58 @@ int intersectBox(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *tfa
 	return smallest_tmax > largest_tmin;
 }
 
+
+__device__
+int intersectBoxAlt(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *tfar){ 
+    float tmin = (boxmin.x - r.o.x) / r.d.x; 
+    float tmax = (boxmax.x - r.o.x) / r.d.x; 
+ 
+    if (tmin > tmax){
+    	float temp = tmin;
+    	tmin = tmax;
+    	tmax = temp;
+    }
+ 
+    float tymin = (boxmin.y - r.o.y) / r.d.y; 
+    float tymax = (boxmax.y - r.o.y) / r.d.y; 
+ 
+    if (tymin > tymax){
+    	float temp = tymin;
+    	tymin = tymax;
+    	tymax = temp;
+    } 
+ 
+    if ((tmin > tymax) || (tymin > tmax)) 
+        return 0; 
+ 
+    if (tymin > tmin) 
+        tmin = tymin; 
+ 
+    if (tymax < tmax) 
+        tmax = tymax; 
+ 
+    float tzmin = (boxmin.z - r.o.z) / r.d.z; 
+    float tzmax = (boxmax.z - r.o.z) / r.d.z; 
+ 
+    if (tzmin > tzmax){
+    	float temp = tzmin;
+    	tzmin = tzmax;
+    	tzmax = temp;
+    }
+ 
+    if ((tmin > tzmax) || (tzmin > tmax)) 
+        return false; 
+ 
+    if (tzmin > tmin) 
+        tmin = tzmin; 
+ 
+    if (tzmax < tmax) 
+        tmax = tzmax; 
+ 
+    *tnear = tmin;
+    *tfar = tmax;
+    return true; 
+} 
 
 __device__
 void drawPixel(float* imgPtr, int x, int y, int imageW, float r, float g, float b, float a){
@@ -106,7 +158,7 @@ float interpolate(float* dataPtr, float3 pos, int3 partitionSize){
 		if(p.x>=partitionSize.x ||		// 	Make sure the point is in the array
 				p.y>=partitionSize.y || 
 				p.z>=partitionSize.z )
-			return 0.0f;
+			return 1.0f;
 		else
 			return dataPtr[p.z*partitionSize.y*partitionSize.x+p.y*partitionSize.x+p.x];	// Get the point from legion X->Y->Z
 	};
@@ -137,16 +189,8 @@ d_render(int imageW, int imageH,
 	const int maxSteps = (int)sqrtf(boxSize.x*boxSize.x+boxSize.y*boxSize.y+boxSize.z*boxSize.z);	// The maximum possible number of steps
 	const float tstep = 0.1f;				// Distance to step
 	const float opacityThreshold = 0.95f;	// Arbitrarily defined alpha cutoff
+	
 
-	const float3 boxMin = make_float3(0, 0, 0); 	// Minimum bounds of data partition
-	const float3 boxMax = make_float3(boxSize.x - 1,				// Maximum bound of partition
-			boxSize.y - 1,
-			boxSize.z - 1);
-	
-	const float3 boxScale = make_float3(abs(maxBound.x - minBound.x) / boxSize.x,
-			abs(maxBound.y - minBound.y) / boxSize.y,
-			abs(maxBound.z - minBound.z) / boxSize.z);
-	
 	uint x = blockIdx.x*blockDim.x + threadIdx.x;	// Current pixel x value
 	uint y = blockIdx.y*blockDim.y + threadIdx.y;	// Current pixel y value
 	
@@ -168,31 +212,65 @@ d_render(int imageW, int imageH,
 
 	// find intersection with box
 	float tnear, tfar;
-	int hit = intersectBox(eyeRay, minBound, maxBound, &tnear, &tfar);
-	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
-			make_float4(0.0, 0.5, 0.0, 0.05),
-			make_float4(0.0, 0.0, 0.5, 0.05),
-			make_float4(0.5, 0.0, 0.0, 0.05),
-			make_float4(0.0, 0.0, 0.5, 0.05),
-			make_float4(0.0, 0.0, 0.5, 0.05),
-	};
+//	if (x==501 && y == 501){
+//		printf("invPVM:\n");
+//		printf("\t<%f,%f,%f,%f>\n",invPVMMatrix.m[0].x,invPVMMatrix.m[0].y,invPVMMatrix.m[0].z,invPVMMatrix.m[0].w);
+//		printf("\t<%f,%f,%f,%f>\n",invPVMMatrix.m[1].x,invPVMMatrix.m[1].y,invPVMMatrix.m[1].z,invPVMMatrix.m[1].w);
+//		printf("\t<%f,%f,%f,%f>\n",invPVMMatrix.m[2].x,invPVMMatrix.m[2].y,invPVMMatrix.m[2].z,invPVMMatrix.m[2].w);
+//		printf("\t<%f,%f,%f,%f>\n",invPVMMatrix.m[3].x,invPVMMatrix.m[3].y,invPVMMatrix.m[3].z,invPVMMatrix.m[3].w);
+//		printf("x:%d, y:%d, u:%f, v:%f\n",x,y,u,v);
+//		printf("EyeRay.o:<%f,%f,%f>  EyeRay.d:<%f,%f,%f>\n",eyeRay.o.x,eyeRay.o.y,eyeRay.o.z,eyeRay.d.x,eyeRay.d.y,eyeRay.d.z);
+//	}
+	int hit = intersectBoxAlt(eyeRay, minBound, maxBound, &tnear, &tfar);
+//	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
+//			make_float4(0.0, 0.0, 0.0, 0.00),
+//			make_float4(0.0, 0.5, 0.0, 0.05),
+//			make_float4(0.0, 0.5, 0.0, 0.05),
+//			make_float4(0.0, 0.5, 0.0, 0.05),
+//			make_float4(0.0, 0.5, 0.0, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			
+//			make_float4(0.5, 0.0, 0.0, 0.00),
+//			make_float4(0.5, 0.0, 0.0, 0.05),
+//			make_float4(0.5, 0.0, 0.0, 0.05),
+//			make_float4(0.5, 0.0, 0.0, 0.05),
+//			make_float4(0.5, 0.0, 0.0, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			make_float4(0.0, 0.0, 0.5, 0.05),
+//			
+//			make_float4(0.0, 0.0, 0.0, 0.05),
+//	};
 
 	if (hit){
 		if (tnear < 0.0f) tnear = 0.0f;     // clamp to near plane
 		
-//		drawPixel(imgPtr,x,y,imageW,0.5,0.0,0.0,0.1);
-//		return;
+//		drawPixel(imgPtr,x,y,imageW,0.5,0.0,0.0,0.5);
 		// march along ray from front to back, accumulating color
 		float4 sum = make_float4(0.0f,0.0f,0.0f,0.0f);
 		float t = tnear;
-		float3 pos = (eyeRay.o + eyeRay.d*tnear + minBound) / boxScale;
+		float3 pos = (eyeRay.o + eyeRay.d*tnear - minBound);
 		float3 step = eyeRay.d*tstep;
 
 		for (int i=0; i<maxSteps; i++){
-			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
+//			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
 				float sample = interpolate(dataPtr,pos,boxSize);
 				float4 col;
-				col = cols[(int)floor(sample*5)];
+//				col = cols[(int)floor(sample*20)];
+				if(sample>0) col.w = 0.05;
+				if(sample<0.01) col.w = 0;
+				else if(sample < 0.05) col.x = 0.5;
+				else if(sample < 0.2) col.w = 0.0;
+				else if(sample < 0.3) col.y = 0.5;
+				else if(sample < 0.4) col.z = 0.5;
+				else if(sample > 0.99) col.w = 0;
+				else col.w = 0.0;
 				col.w *= density;
 
 				// "under" operator for back-to-front blending
@@ -209,7 +287,8 @@ d_render(int imageW, int imageH,
 				if (sum.w > opacityThreshold)
 					break;
 				
-			}
+//			}
+//			sum.x += 0.1
 
 			t += tstep;
 			if (t > tfar) break;
@@ -282,9 +361,9 @@ void create_task(const Task *task,
 
 
 	int3 boxSize = make_int3(tmpimg.partition.datx,tmpimg.partition.daty,tmpimg.partition.datz);
-	float3 minBound = make_float3(tmpimg.partition.xmin + 2,tmpimg.partition.ymin + 2,tmpimg.partition.zmin + 2)*3;
-	float3 maxBound = make_float3(tmpimg.partition.xmax + 2,tmpimg.partition.ymax + 2,tmpimg.partition.zmax + 2)*3;
-//	
+	float3 minBound = make_float3(tmpimg.partition.xmin,tmpimg.partition.ymin,tmpimg.partition.zmin);
+	float3 maxBound = make_float3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
+
 //	printf("Min:<%f,%f,%f> Max:<%f,%f,%f>\n",minBound.x,minBound.y,minBound.z,maxBound.x,maxBound.y,maxBound.z);
 	
 //	float3 minBound = make_float3(0.0,0.0,0.0);

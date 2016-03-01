@@ -55,11 +55,11 @@ int DataMgr::GetMaxDim()
 }
 
 // Load raw data from disk
-void* DataMgr::loadRawFile(const char *filename, int nx, int ny, int nz)
+void* DataMgr::loadRawFile(const char *filename, int nx, int ny, int nz, int type_size)
 {
     FILE *fp = fopen(filename, "rb");
 
-    size_t size = nx * ny * nz * sizeof(double);
+    size_t size = nx * ny * nz * sizeof(short);
 
 
 
@@ -76,13 +76,13 @@ void* DataMgr::loadRawFile(const char *filename, int nx, int ny, int nz)
         return 0;
     }
 
-    double * temp = (double *)malloc(size);
+    unsigned short * temp = (unsigned short *)malloc(size);
     data = (float*)malloc(nCells*sizeof(float));
     size_t read = fread(temp, 1, size, fp);
     fclose(fp);
 
     for(int i = 0; i < nCells; i++) {
-        data[i] = (float)temp[i];
+        data[i] = (float)temp[i] / 65535;
         //cout<<data[i]<<" ";
         //data[i] = 0.9;
     }
@@ -90,7 +90,7 @@ void* DataMgr::loadRawFile(const char *filename, int nx, int ny, int nz)
 #if defined(_MSC_VER_)
     printf("Read '%s', %Iu bytes\n", filename, read);
 #else
-//    printf("Read '%s', %zu bytes\n", filename, read);
+    printf("Read '%s', %zu bytes\n", filename, read);
 #endif
 
     return data;

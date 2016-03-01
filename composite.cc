@@ -102,13 +102,34 @@ void cpu_draw_task(const Task *task,
 
 }
 
+float* loadRawFile(const char *filename, int nx, int ny, int nz){
+    FILE *fp = fopen(filename, "rb");
+    size_t size = nx * ny * nz * sizeof(unsigned char);
+    int nCells = nx * ny * nz;
+    if (!fp){
+        fprintf(stderr, "Error opening file '%s'\n", filename);
+        return 0;
+    }
+    unsigned char * temp = (unsigned char *)malloc(size);
+    float * data = (float*)malloc(nCells*sizeof(float));
+    size_t read = fread(temp, 1, size, fp);
+    printf("Read '%s', %zu bytes\n", filename, read);
+	fflush(stdout);
+    fclose(fp);
+    for(int i = 0; i < nCells; i++) {
+        data[i] = (float)temp[i] / 255;
+    }
+    return data;
+}
+
 void create_interface_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata
-	DataMgr* dataMgr = new DataMgr;
-	dataMgr->loadRawFile(img.volumeFilename, img.partition.datx, img.partition.daty, img.partition.datz);
-	float *volume = (float*)dataMgr->GetData();
+	char filename[100];
+	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
+//	sprintf(filename,"heptane.raw");
+	float *volume = loadRawFile(filename, img.partition.datx, img.partition.daty, img.partition.datz);
 
 	Rect<1> dataBound = Rect<1>(0,img.partition.datx*img.partition.daty*img.partition.datz-1);	// Indexing the region used to hold the data (linearized)
 	IndexSpace dataIndexSpace = runtime->create_index_space(ctx, Domain::from_rect<1>(dataBound)); //Create the Index Space (1 index per voxel)
@@ -130,9 +151,14 @@ void create_interface_task(const Task *task,
 		RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
 		// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
 		int i = 0;
+//		float max = 0;
+//		float min = 1000000;
 		for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
+//			if(volume[i] > max) max = volume[i];
+//			if(volume[i] < min && volume[i]!=0) min = volume[i];
 			dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
 		}
+//		cout << "Max: " << max << " and Min: " << min << endl;
 		runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
 	}
 	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
@@ -254,92 +280,6 @@ Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1
 	return runtime->execute_task(ctx,combineLauncher);
 }
 
-vector<LogicalRegion> loadRender(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
-	vector<LogicalRegion> imgs;
-	vector<Future> futures;
-	const char *datafilesFile = "/home/sci/sohl/Documents/chevron_O2_11/_dataFiles.in";
-	ifstream datafile;
-	datafile.open(datafilesFile);
-	char output[100];
-	if(!datafile.is_open()){
-		cout << "File could not be opened" << endl;
-		assert(false);
-	}
-	datafile >> output;
-	int num = stoi(output);
-	int num_subregions = runtime->get_tunable_value(ctx, SUBREGION_TUNABLE, PARTITIONING_MAPPER_ID);
-	cout << "Loading from " << num << " files" << endl;
-	int i2 = 0;
-	for(int i = 0; i < num; ++i){
-		datafile >> output;
-		string dataFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + string(output);
-		if(!(i2++ % 10 == 0)) continue;
-		ifstream infofile;
-		infofile.open(dataFilename);
-		if(!infofile.is_open()){
-			cout << "Info File could not be opened" << endl;
-			assert(false);
-		}
-		char info[100];
-		infofile >> info;
-		string volumeName(info);
-		infofile >> info;
-		int datx = atoi(info);
-		infofile >> info;
-		int daty = atoi(info);
-		infofile >> info;
-		int datz = atoi(info);
-
-		infofile >> info;
-		float  minx = atof(info);
-		infofile >> info;
-		float  maxx = atof(info);
-		infofile >> info;
-		float  miny = atof(info);
-		infofile >> info;
-		float  maxy = atof(info);
-		infofile >> info;
-		float  minz = atof(info);
-		infofile >> info;
-		float  maxz = atof(info);
-
-//		infofile >> info;
-//		float min_scalar = atof(info);
-//		infofile >> info;
-//		float max_scalar = atof(info);
-
-		Image newimg;
-		newimg.width = width;
-		newimg.height = height;
-		newimg.partition = (DataPartition){datx,daty,datz,minx,maxx,miny,maxy,minz,maxz};
-		for(int j = 0; j < 16; ++j)
-			newimg.invPVM[j] = mov.invPVM[j];
-		newimg.order = minx * mov.xdat;
-		newimg.randomseed = rand();
-		newimg.core = i % num_subregions;
-
-		memset(newimg.volumeFilename, '\0', 100);
-		string volumeFilename = "/home/sci/sohl/Documents/chevron_O2_11/" + volumeName.substr(0,2) + "/" + volumeName;
-		std::copy(volumeFilename.begin(), volumeFilename.end(), newimg.volumeFilename);
-
-		LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
-
-		TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&newimg,sizeof(newimg)));	// Spawn the renderer task
-		loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
-		loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-		futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
-
-		imgs.push_back(imgLogicalRegion);
-
-		if(i % (int)((float)num / 10) == 0){
-			cout << "\t" << (int)((float)i / num * 100) << "% completed" << endl;
-		}
-	}
-	for(unsigned int i = 0; i < futures.size(); ++i){
-		futures[i].get_void_result();
-	}
-	return imgs;
-}
 
 vector<LogicalRegion> loadRenderCPU(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
 	vector<LogicalRegion> imgs;
@@ -371,6 +311,82 @@ vector<LogicalRegion> loadRenderCPU(Context ctx, HighLevelRuntime *runtime, int 
 	return imgs;
 }
 
+vector<LogicalRegion> loadRenderHeptane(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
+	vector<LogicalRegion> imgs;
+	vector<Future> futures;
+	int num_subregions = runtime->get_tunable_value(ctx, SUBREGION_TUNABLE, PARTITIONING_MAPPER_ID);
+	int t = 0;
+	for(int i = 0; i < 4; i++){
+		for(int j = 0; j < 4; j++){
+			for(int k = 0; k < 4; k++){
+				int x = i * 75;
+				int y = j * 75;
+				int z = k * 75;
+				Image img;
+				img.width = width;
+				img.height = height;
+				img.partition = (DataPartition){75,75,75,(float)x,(float)(x+74),(float)y,(float)(y+74),(float)z,(float)(z+74)};
+				if(i == 3){ img.partition.xmax = x + 76; img.partition.datx = 77; }
+				if(j == 3){ img.partition.ymax = y + 76; img.partition.daty = 77; }
+				if(k == 3){ img.partition.zmax = z + 76; img.partition.datz = 77; }
+				for(int l = 0; l < 16; ++l)
+					img.invPVM[l] = mov.invPVM[l];
+				img.i = i;
+				img.j = j;
+				img.k = k;
+				img.order = t++;
+				img.core = t % num_subregions;
+				img.randomseed = rand();
+				LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
+				TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
+				loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
+				loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
+				futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
+
+				imgs.push_back(imgLogicalRegion);
+				if(t >= num_subregions){
+					for(unsigned int i = 0; i < futures.size(); ++i){
+						futures[i].get_void_result();
+					}
+					return imgs;
+				}
+			}
+		}
+	}
+	for(unsigned int i = 0; i < futures.size(); ++i){
+		futures[i].get_void_result();
+	}
+	return imgs;
+}
+
+vector<LogicalRegion> loadRenderHeptane2(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
+	vector<LogicalRegion> imgs;
+	vector<Future> futures;
+
+	Image img;
+	img.width = width;
+	img.height = height;
+	img.partition = (DataPartition){302,302,302,0,301,0,301,0,301};
+	for(int j = 0; j < 16; ++j)
+		img.invPVM[j] = mov.invPVM[j];
+	img.order = 1;
+	img.core = 1;
+	img.randomseed = rand();
+	LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
+	TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
+	loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
+	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
+	futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
+
+	imgs.push_back(imgLogicalRegion);
+
+
+	for(unsigned int i = 0; i < futures.size(); ++i){
+		futures[i].get_void_result();
+	}
+	return imgs;
+}
+
 void top_level_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
@@ -381,8 +397,8 @@ void top_level_task(const Task *task,
 	srand(time(NULL));
 	int width = 1000;
 	int height = 1000;
-	Movement mov = {{7.07107, 5., 10., 18.5355, 0., 7.07107, -14.1421, -14.1421, 7.07107, \
-			-5., -10., -11.4645, 0., 0., 0., 1.},1.0};
+	Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
+			141.421, -100., -2000., -1883.58, 0., 0., 0., 1.},1.0};
 	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));
 	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound));
 	FieldSpace imgField = runtime->create_field_space(ctx);
@@ -390,7 +406,7 @@ void top_level_task(const Task *task,
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
 		allocator.allocate_field(sizeof(float),FID_VAL);
 	}
-	vector<LogicalRegion> imgLogicalRegions = loadRender(ctx, runtime, width, height, mov, imgIndex, imgField);
+	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane(ctx, runtime, width, height, mov, imgIndex, imgField);
 
 	cout << "Done rendering" << endl;
 

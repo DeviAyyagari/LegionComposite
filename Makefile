@@ -33,7 +33,7 @@ CONDUIT := ibv
 # Put the binary file name here
 OUTFILE		?= composite
 # List all the application source files here
-GEN_SRC		?= composite.cc DataMgr.cc 
+GEN_SRC		?= composite.cc
 GEN_GPU_SRC	?= render_kernel.cu 
 
 
