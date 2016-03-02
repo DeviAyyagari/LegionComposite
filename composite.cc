@@ -380,6 +380,15 @@ void top_level_task(const Task *task,
 	srand(time(NULL));
 	int width = 500;
 	int height = 500;
+
+
+	const InputArgs &command_args = HighLevelRuntime::get_input_args();
+	if (command_args.argc > 1){
+		width = atoi(command_args.argv[1]);
+		height = width;
+		assert(width >= 0);
+	}
+
 	Movement mov = {{362.039, 256., 128., 439.777, 0., 362.039, -181.019, -18.3848, \
 				362.039, -256., -128., -86.2233, 0., 0., 0., 1.},1.0};
 	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));
