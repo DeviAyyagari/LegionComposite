@@ -127,8 +127,8 @@ void create_interface_task(const Task *task,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata
 	char filename[100];
-//	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
-	sprintf(filename,"heptane.raw");
+	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
+//	sprintf(filename,"heptane.raw");
 	float *volume = loadRawFile(filename, img.partition.datx, img.partition.daty, img.partition.datz);
 
 	Rect<1> dataBound = Rect<1>(0,img.partition.datx*img.partition.daty*img.partition.datz-1);	// Indexing the region used to hold the data (linearized)
@@ -151,14 +151,9 @@ void create_interface_task(const Task *task,
 		RegionAccessor<AccessorType::Generic, float> dataAccessor = dataPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
 		// The GPU's tested with have much better single precision performance. If this is changed, the renderer needs to be modified, too
 		int i = 0;
-//		float max = 0;
-//		float min = 1000000;
 		for(GenericPointInRectIterator<1> pir(dataBound); pir; pir++){	// Step through the data and write to the physical region
-//			if(volume[i] > max) max = volume[i];
-//			if(volume[i] < min && volume[i]!=0) min = volume[i];
 			dataAccessor.write(DomainPoint::from_point<1>(pir.p),volume[i++]); // Same order as data: X->Y->Z
 		}
-//		cout << "Max: " << max << " and Min: " << min << endl;
 		runtime->unmap_region(ctx,dataPhysicalRegion);					// Free up resources
 	}
 	TaskLauncher loadLauncher(CREATE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
@@ -359,34 +354,6 @@ vector<LogicalRegion> loadRenderHeptane(Context ctx, HighLevelRuntime *runtime, 
 	return imgs;
 }
 
-vector<LogicalRegion> loadRenderHeptane2(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
-	vector<LogicalRegion> imgs;
-	vector<Future> futures;
-
-	Image img;
-	img.width = width;
-	img.height = height;
-	img.partition = (DataPartition){302,302,302,0,301,0,301,0,301};
-	for(int j = 0; j < 16; ++j)
-		img.invPVM[j] = mov.invPVM[j];
-	img.order = 1;
-	img.core = 1;
-	img.randomseed = rand();
-	LogicalRegion imgLogicalRegion = runtime->create_logical_region(ctx,imgIndex,imgField);
-	TaskLauncher loadLauncher(CREATE_INTERFACE_TASK_ID, TaskArgument(&img,sizeof(img)));	// Spawn the renderer task
-	loadLauncher.add_region_requirement(RegionRequirement(imgLogicalRegion,READ_WRITE,EXCLUSIVE,imgLogicalRegion));
-	loadLauncher.add_field(0,FID_VAL);		// Output Image as second region
-	futures.push_back(runtime->execute_task(ctx,loadLauncher));	// Launch and terminate render task
-
-	imgs.push_back(imgLogicalRegion);
-
-
-	for(unsigned int i = 0; i < futures.size(); ++i){
-		futures[i].get_void_result();
-	}
-	return imgs;
-}
-
 void top_level_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
@@ -414,7 +381,7 @@ void top_level_task(const Task *task,
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
 		allocator.allocate_field(sizeof(float),FID_VAL);
 	}
-	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane2(ctx, runtime, width, height, mov, imgIndex, imgField);
+	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane(ctx, runtime, width, height, mov, imgIndex, imgField);
 
 	cout << "Done rendering" << endl;
 
