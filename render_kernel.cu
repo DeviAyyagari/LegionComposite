@@ -186,7 +186,7 @@ d_render(int imageW, int imageH,
 	 * Kernal renderer for individual ray tracing
 	 */
 
-	const int maxSteps = (int)sqrtf(boxSize.x*boxSize.x+boxSize.y*boxSize.y+boxSize.z*boxSize.z);	// The maximum possible number of steps
+	const int maxSteps = (int)sqrtf(boxSize.x*boxSize.x+boxSize.y*boxSize.y+boxSize.z*boxSize.z)*10;	// The maximum possible number of steps
 	const float tstep = 0.1f;				// Distance to step
 	const float opacityThreshold = 0.95f;	// Arbitrarily defined alpha cutoff
 	
@@ -248,6 +248,266 @@ d_render(int imageW, int imageH,
 //			make_float4(0.0, 0.0, 0.0, 0.05),
 //	};
 
+	
+	float4 cols[] = {make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0,0),
+			make_float4(0,0,0.363636,0),
+			make_float4(0,0.459091,0.459091,0),
+			make_float4(0,0.490909,0.490909,0.0318182),
+			make_float4(0,0.477273,0.477273,0.0378788),
+			make_float4(0,0.513636,0.513636,0.0439394),
+			make_float4(0,0.531818,0.531818,0.05),
+			make_float4(0,0.545455,0.545455,0.05),
+			make_float4(0,0.55,0.55,0.05),
+			make_float4(0,0.554545,0.554545,0.05),
+			make_float4(0,0.554545,0.554545,0.05),
+			make_float4(0,0.559091,0.559091,0.05),
+			make_float4(0,0.563636,0.563636,0.05),
+			make_float4(0,0.563636,0.563636,0.05),
+			make_float4(0,0.568182,0.568182,0.0545455),
+			make_float4(0,0.568182,0.568182,0.0545455),
+			make_float4(0,0.568182,0.568182,0.0545455),
+			make_float4(0,0.568182,0.568182,0.0590909),
+			make_float4(0,0.568182,0.568182,0.0636364),
+			make_float4(0,0.568182,0.568182,0.0681818),
+			make_float4(0.00681818,0.568182,0.568182,0.0727273),
+			make_float4(0.00909091,0.568182,0.568182,0.0727273),
+			make_float4(0.0106061,0.568182,0.568182,0.0727273),
+			make_float4(0.0121212,0.563636,0.563636,0.0727273),
+			make_float4(0.0136364,0.559091,0.559091,0.0727273),
+			make_float4(0.0181818,0.554545,0.554545,0.0727273),
+			make_float4(0.0227273,0.540909,0.540909,0.0727273),
+			make_float4(0.0272727,0.540909,0.540909,0.0727273),
+			make_float4(0.0340909,0.522727,0.522727,0.0636364),
+			make_float4(0.0409091,0.518182,0.518182,0.0590909),
+			make_float4(0.0439394,0.513636,0.513636,0.0545455),
+			make_float4(0.0469697,0.509091,0.509091,0.0545455),
+			make_float4(0.05,0.504545,0.504545,0.05),
+			make_float4(0.05,0.495455,0.495455,0.05),
+			make_float4(0.0772727,0.486364,0.486364,0.0454545),
+			make_float4(0.0954545,0.463636,0.463636,0.0409091),
+			make_float4(0.131818,0.195455,0.195455,0.0363636),
+			make_float4(0.154545,0.177273,0.177273,0.0363636),
+			make_float4(0.181818,0.168182,0.168182,0.0409091),
+			make_float4(0.190909,0.15,0.15,0.0727273),
+			make_float4(0.204545,0.136364,0.136364,0.0727273),
+			make_float4(0.227273,0.122727,0.122727,0.0909091),
+			make_float4(0.245455,0.122727,0.122727,0.104545),
+			make_float4(0.25,0.118182,0.118182,0.113636),
+			make_float4(0.263636,0.104545,0.104545,0.131818),
+			make_float4(0.268182,0.1,0.1,0.140909),
+			make_float4(0.286364,0.0909091,0.0909091,0.154545),
+			make_float4(0.290909,0.0681818,0.0681818,0.168182),
+			make_float4(0.3,0.0545455,0.0545455,0.172727),
+			make_float4(0.313636,0.0409091,0.0409091,0.186364),
+			make_float4(0.318182,0.0136364,0.0136364,0.190909),
+			make_float4(0.322727,0.00454545,0.00454545,0.204545),
+			make_float4(0.331818,0,0,0.209091),
+			make_float4(0.336364,0,0,0.218182),
+			make_float4(0.340909,0,0,0.231818),
+			make_float4(0.345455,0,0,0.240909),
+			make_float4(0.347727,0,0,0.243182),
+			make_float4(0.35,0,0,0.245455),
+			make_float4(0.356061,0,0,0.25),
+			make_float4(0.362121,0,0,0.259091),
+			make_float4(0.368182,0,0,0.263636),
+			make_float4(0.372727,0,0,0.268182),
+			make_float4(0.377273,0,0,0.275),
+			make_float4(0.390909,0,0,0.281818),
+			make_float4(0.394318,0,0,0.286364),
+			make_float4(0.397727,0,0,0.286364),
+			make_float4(0.401136,0,0,0.295455),
+			make_float4(0.404545,0,0,0.3),
+			make_float4(0.409091,0,0,0.3),
+			make_float4(0.412121,0,0,0.3),
+			make_float4(0.415152,0,0,0.3),
+			make_float4(0.418182,0,0,0.3),
+			make_float4(0.418182,0,0,0.3),
+			make_float4(0.418182,0,0,0.3),
+			make_float4(0.418182,0,0,0.3),
+			make_float4(0.418182,0,0,0.3),
+			make_float4(0.418182,0,0,0.295455),
+			make_float4(0.418182,0,0,0.295455),
+			make_float4(0.415909,0,0,0.295455),
+			make_float4(0.413636,0,0,0.295455),
+			make_float4(0.409091,0,0,0.295455),
+			make_float4(0.406061,0,0,0.290909),
+			make_float4(0.40303,0,0,0.290909),
+			make_float4(0.4,0,0,0.286364),
+			make_float4(0.39697,0,0,0.281818),
+			make_float4(0.393939,0,0,0.277273),
+			make_float4(0.390909,0,0,0.263636),
+			make_float4(0.386364,0,0,0.259091),
+			make_float4(0.381818,0,0,0.254545),
+			make_float4(0.377273,0,0,0.245455),
+			make_float4(0.370455,0,0,0.236364),
+			make_float4(0.363636,0,0,0.231818),
+			make_float4(0.359091,0,0,0.222727),
+			make_float4(0.354545,0,0,0.195455),
+			make_float4(0.347727,0,0,0.181818),
+			make_float4(0.340909,0,0,0.168182),
+			make_float4(0.336364,0,0,0.159091),
+			make_float4(0.331818,0,0,0.15),
+			make_float4(0.324242,0,0,0.140909),
+			make_float4(0.316667,0,0,0.122727),
+			make_float4(0.309091,0,0,0.113636),
+			make_float4(0.304545,0,0,0.1),
+			make_float4(0.3,0,0,0.0863636),
+			make_float4(0.295455,0,0,0.0818182),
+			make_float4(0.288636,0,0,0.0727273),
+			make_float4(0.281818,0,0,0.0681818),
+			make_float4(0.279545,0,0,0.0636364),
+			make_float4(0.277273,0,0,0.0590909),
+			make_float4(0.270455,0,0,0.0568182),
+			make_float4(0.263636,0,0,0.0545455),
+			make_float4(0.256818,0,0,0.0545455),
+			make_float4(0.25,0,0,0.0545455),
+			make_float4(0.245455,0,0,0.0545455),
+			make_float4(0.240909,0,0,0.0545455),
+			make_float4(0.234848,0,0,0.0545455),
+			make_float4(0.228788,0,0,0.0545455),
+			make_float4(0.222727,0,0,0.0554545),
+			make_float4(0.213636,0,0,0.0563636),
+			make_float4(0.204545,0,0,0.0572727),
+			make_float4(0.193182,0,0,0.0581818),
+			make_float4(0.181818,0,0,0.0590909),
+			make_float4(0.118182,0,0,0.06),
+			make_float4(0.111364,0,0,0.0609091),
+			make_float4(0.104545,0,0,0.0618182),
+			make_float4(0.0977273,0,0,0.0627273),
+			make_float4(0.0909091,0,0,0.0636364),
+			make_float4(0.080303,0,0,0.0645454),
+			make_float4(0.069697,0,0,0.0654545),
+			make_float4(0.0590909,0,0,0.0663636),
+			make_float4(0.0511364,0,0,0.0672727),
+			make_float4(0.0431818,0.00454545,0,0.0681818),
+			make_float4(0.0352273,0.0727273,0,0.07),
+			make_float4(0.0272727,0.109091,0,0.0718182),
+			make_float4(0.0204545,0.131818,0,0.0736364),
+			make_float4(0.0136364,0.140909,0,0.0754545),
+			make_float4(0.00681818,0.163636,0,0.0772727),
+			make_float4(0,0.172727,0,0.0784091),
+			make_float4(0,0.195455,0,0.0795455),
+			make_float4(0,0.213636,0,0.0806818),
+			make_float4(0,0.313636,0,0.0818182),
+			make_float4(0,0.343182,0,0.0836364),
+			make_float4(0,0.372727,0,0.0854545),
+			make_float4(0,0.413636,0,0.0872727),
+			make_float4(0,0.440909,0,0.0890909),
+			make_float4(0,0.459091,0,0.0909091),
+			make_float4(0,0.509091,0,0.0954545),
+			make_float4(0,0.563636,0,0.1),
+			make_float4(0,0.618182,0,0.109091),
+			make_float4(0,0.659091,0,0.115152),
+			make_float4(0,0.677273,0,0.121212),
+			make_float4(0,0.681818,0,0.127273),
+			make_float4(0,0.681818,0,0.131818),
+			make_float4(0,0.681818,0,0.136364),
+			make_float4(0,0.681818,0,0.138636),
+			make_float4(0,0.681818,0,0.140909),
+			make_float4(0,0.681818,0,0.145455),
+			make_float4(0,0.681818,0,0.15),
+			make_float4(0,0.681818,0,0.159091),
+			make_float4(0,0.680682,0,0.161364),
+			make_float4(0,0.679545,0,0.163636),
+			make_float4(0,0.678409,0,0.163636),
+			make_float4(0,0.677273,0,0.163636),
+			make_float4(0,0.668182,0,0.168182),
+			make_float4(0,0.659091,0,0.172727),
+			make_float4(0,0.65,0,0.172727),
+			make_float4(0,0.637879,0,0.172727),
+			make_float4(0,0.625758,0,0.181818),
+			make_float4(0,0.613636,0,0.186364),
+			make_float4(0,0.6,0,0.190909),
+			make_float4(0,0.586364,0,0.195455),
+			make_float4(0,0.577273,0,0.204545),
+			make_float4(0,0.568182,0,0.204545),
+			make_float4(0,0.557955,0,0.204545),
+			make_float4(0,0.547727,0,0.204545),
+			make_float4(0,0.5375,0,0.204545),
+			make_float4(0,0.527273,0,0.204545),
+			make_float4(0,0.518182,0,0.204545),
+			make_float4(0,0.509091,0,0.204545),
+			make_float4(0,0.5,0,0.204545),
+			make_float4(0,0.489394,0,0.195455),
+			make_float4(0,0.478788,0,0.186364),
+			make_float4(0,0.468182,0,0.181818),
+			make_float4(0,0.454545,0,0.177273),
+			make_float4(0,0.445455,0,0.172727),
+			make_float4(0,0.436364,0,0.168182),
+			make_float4(0,0.430303,0,0.163636),
+			make_float4(0,0.424242,0,0.154545),
+			make_float4(0,0.418182,0,0.15),
+			make_float4(0,0.412121,0,0.145455),
+			make_float4(0,0.406061,0,0.142424),
+			make_float4(0,0.4,0,0.139394),
+			make_float4(0,0.390909,0,0.136364),
+			make_float4(0,0.381818,0,0.131818),
+			make_float4(0,0.372727,0,0.127273),
+			make_float4(0,0.365152,0,0.125),
+			make_float4(0,0.357576,0,0.122727),
+			make_float4(0,0.35,0,0.120455),
+			make_float4(0,0.327273,0,0.118182),
+			make_float4(0,0.318182,0,0.115909),
+			make_float4(0,0.309091,0,0.113636),
+			make_float4(0,0.3,0,0.111364),
+			make_float4(0,0.290909,0,0.109091),
+			make_float4(0,0.288636,0,0.104545),
+			make_float4(0,0.286364,0,0.1),
+			make_float4(0,0.272727,0,0.0977273),
+			make_float4(0,0.268182,0,0.0909091),
+			make_float4(0,0.259091,0,0.0863636),
+			make_float4(0,0.254545,0,0.0840909),
+			make_float4(0,0.25,0,0.0818182),
+			make_float4(0,0.240909,0,0.0818182),
+			make_float4(0,0.238636,0,0.0795455),
+			make_float4(0,0.236364,0,0.0772727),
+			make_float4(0,0.227273,0,0.075),
+			make_float4(0,0.222727,0,0.0727273),
+			make_float4(0,0.218182,0,0.0727273),
+			make_float4(0,0.213636,0,0.0727273),
+			make_float4(0,0.204545,0,0.0727273),
+			make_float4(0,0.195455,0,0.0727273),
+			make_float4(0,0.186364,0,0.0727273),
+			make_float4(0,0.177273,0,0.0727273),
+			make_float4(0,0.168182,0,0.0727273),
+			make_float4(0,0.161364,0,0.0727273),
+			make_float4(0,0.154545,0,0.0727273),
+			make_float4(0,0.140909,0,0.0727273),
+			make_float4(0,0.134091,0,0.0727273),
+			make_float4(0,0.127273,0,0.0712121),
+			make_float4(0,0.122727,0,0.069697),
+			make_float4(0,0.118182,0,0.0681818),
+			make_float4(0,0.115909,0,0.0681818),
+			make_float4(0,0.113636,0,0.0681818),
+			make_float4(0,0.104545,0,0.0681818),
+			make_float4(0,0.1,0,0.0681818),
+			make_float4(0,0.0954545,0,0.0681818),
+			make_float4(0,0.0931818,0,0.0681818),
+			make_float4(0,0.0909091,0,0.0681818),
+			make_float4(0,0.0863636,0,0.0681818),
+			make_float4(0,0.0772727,0,0.0636364),
+			make_float4(0,0.075,0,0.0636364),
+			make_float4(0,0.0727273,0,0.0590909),
+			make_float4(0,0.0704545,0,0.0590909),
+			make_float4(0,0.0681818,0,0.0545455),
+			make_float4(0,0.0636364,0,0.05),
+			make_float4(0,0.0636364,0,0.05),
+			make_float4(0,0.0545455,0,0.0136364),
+	};
+	
+	
 	if (hit){
 		if (tnear < 0.0f) tnear = 0.0f;     // clamp to near plane
 		
@@ -262,15 +522,15 @@ d_render(int imageW, int imageH,
 //			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
 				float sample = interpolate(dataPtr,pos,boxSize);
 				float4 col;
-//				col = cols[(int)floor(sample*20)];
-				if(sample>0) col.w = 0.05;
-				if(sample<0.01) col.w = 0;
-				else if(sample < 0.05) col.x = 0.5;
-				else if(sample < 0.2) col.w = 0.0;
-				else if(sample < 0.3) col.y = 0.5;
-				else if(sample < 0.4) col.z = 0.5;
-				else if(sample > 0.99) col.w = 0;
-				else col.w = 0.0;
+				col = cols[(int)floor(sample*256)];
+//				if(sample>0) col.w = 0.05;
+//				if(sample<0.01) col.w = 0;
+//				else if(sample < 0.05) col.x = 0.5;
+//				else if(sample < 0.2) col.w = 0.0;
+//				else if(sample < 0.3) col.y = 0.5;
+//				else if(sample < 0.4) col.z = 0.5;
+//				else if(sample > 0.99) col.w = 0;
+//				else col.w = 0.0;
 				col.w *= density;
 
 				// "under" operator for back-to-front blending
@@ -295,9 +555,8 @@ d_render(int imageW, int imageH,
 			pos += step;
 		}
 
-		sum *= brightness;
 		
-		drawPixel(imgPtr,x,y,imageW,(float)sum.x,(float)sum.y,(float)sum.z,(float)sum.w);
+		drawPixel(imgPtr,x,y,imageW,(float)sum.x*brightness,(float)sum.y*brightness,(float)sum.z*brightness,(float)sum.w);
 	}
 }
 
@@ -323,8 +582,8 @@ void create_task(const Task *task,
 	Image tmpimg = *((Image*)task->args);	// Metadata for current render
 	RegionAccessor<AccessorType::Generic, float> dataAccessor = regions[1].get_field_accessor(FID_VAL).typeify<float>(); // Accessor for data
 	RegionAccessor<AccessorType::Generic, float> imgAccessor = regions[0].get_field_accessor(FID_VAL).typeify<float>();	// And image
-	float density = 0.05f;			// Arbitrary defined constants
-	float brightness = 1.0f;		// 	(should be moved into metadata)
+	float density = 0.1f;			// Arbitrary defined constants
+	float brightness = 0.9f;		// 	(should be moved into metadata)
 	float transferOffset = 0.0f;
 	float transferScale = 1.0f;
 	int width = tmpimg.width;			// Get total image size
@@ -364,7 +623,8 @@ void create_task(const Task *task,
 	float3 minBound = make_float3(tmpimg.partition.xmin,tmpimg.partition.ymin,tmpimg.partition.zmin);
 	float3 maxBound = make_float3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
 
-//	printf("Min:<%f,%f,%f> Max:<%f,%f,%f>\n",minBound.x,minBound.y,minBound.z,maxBound.x,maxBound.y,maxBound.z);
+	printf("Box:<%d,%d,%d>\n",boxSize.x,boxSize.y,boxSize.z);
+	printf("Min:<%f,%f,%f> Max:<%f,%f,%f>\n",minBound.x,minBound.y,minBound.z,maxBound.x,maxBound.y,maxBound.z);
 	
 //	float3 minBound = make_float3(0.0,0.0,0.0);
 //	float3 maxBound = make_float3(5.0,5.0,5.0);

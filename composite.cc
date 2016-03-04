@@ -128,7 +128,7 @@ void create_interface_task(const Task *task,
 	Image img = *((Image*)task->args);	// Task metadata
 	char filename[100];
 //	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
-//	sprintf(filename,"heptane.raw");
+	sprintf(filename,"heptane.raw");
 	float *volume = loadRawFile(filename, img.partition.datx, img.partition.daty, img.partition.datz);
 
 	Rect<1> dataBound = Rect<1>(0,img.partition.datx*img.partition.daty*img.partition.datz-1);	// Indexing the region used to hold the data (linearized)
@@ -414,7 +414,7 @@ void top_level_task(const Task *task,
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
 		allocator.allocate_field(sizeof(float),FID_VAL);
 	}
-	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane(ctx, runtime, width, height, mov, imgIndex, imgField);
+	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane2(ctx, runtime, width, height, mov, imgIndex, imgField);
 
 	cout << "Done rendering" << endl;
 
