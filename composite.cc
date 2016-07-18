@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
+
+#include <boost/gil/extension/io/png_io.hpp>
 #include "composite.h"
 #include "DataMgr.h"
 
@@ -255,7 +257,30 @@ void display_task(const Task *task,
 	Rect<1> imgBound = imgDomain.get_rect<1>();					// Get the size of the pixel data
 	RegionAccessor<AccessorType::Generic,float> accessImg = imgPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
 	imgPhysicalRegion.wait_until_valid();
-	cout << "Writing to File" << endl;
+        std::vector< unsigned char> r;  // red
+	std::vector< unsigned char> g;  // green
+        std::vector< unsigned char> b;  // blue
+	std::vector< unsigned char> a;  // alpha
+	
+	cout << "Writing to File out.png" << endl;
+
+	int counter = 0;
+	for(GenericPointInRectIterator<1> pir(imgBound); pir; pir++){
+		float val = accessImg.read(DomainPoint::from_point<1>(pir.p));
+		if(counter == 0)
+			r.push_back(val*255);//reinterpret_cast<char*>(&val));
+		else if(counter == 1)
+			g.push_back(val*255);//reinterpret_cast<char*>(&val));
+		else if(counter == 2)
+			b.push_back(val*255);//reinterpret_cast<char*>(&val));
+		else if(counter == 3)
+			a.push_back(val*255);//reinterpret_cast<char*>(&val));
+		counter++;
+		if(counter>3) counter = 0;
+	}
+	boost::gil::rgba8c_planar_view_t view = boost::gil::planar_rgba_view(img.width, img.height, r.data(), g.data(), b.data(), a.data(), img.width);
+	boost::gil::png_write_view("out.png", view);
+/*	cout << "Writing to File" << endl;
 	char filename[50];
 	sprintf(filename,"output.raw");
 	ofstream oFile(filename, ios::out | ios::binary);
@@ -267,6 +292,7 @@ void display_task(const Task *task,
 	}
 	oFile.close();
 	cout << "Finished Writing" << endl;
+*/
 }
 
 Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1, LogicalRegion input2, LogicalRegion output, compositeArguments co){
