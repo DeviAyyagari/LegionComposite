@@ -42,7 +42,7 @@ INC_FLAGS	?=
 CC_FLAGS	?= -std=c++11 -g
 NVCC_FLAGS	?= -std=c++11
 GASNET_FLAGS	?=
-LD_FLAGS	?= 
+LD_FLAGS	?= -lpng 
 GPU_ARCH	:= sm_30
 
 ###########################################################################
