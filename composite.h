@@ -21,6 +21,7 @@ enum TaskIDs{
 	TOP_LEVEL_TASK_ID,
 	CREATE_TASK_ID,
 	DISPLAY_TASK_ID,
+	COMPOSITE_TASK_ID,
 	COMBINE_TASK_ID,
 	CREATE_INTERFACE_TASK_ID,
 	CPU_DRAW_TASK_ID,
@@ -74,9 +75,18 @@ struct compositeArguments{
 	Movement mov;
 	int miny;
 	int maxy;
+	int minx;
+	int maxx;
 	PhaseBarrier barrier;
 	int core;
 };
+
+struct tripleArgument{
+	compositeArguments co;
+	compositeArguments co1;
+	compositeArguments co2;
+}; /**< Arguments needed by combination tasks */
+
 
 struct DataPartition{
 	int datx;
@@ -94,9 +104,13 @@ struct Image{
 	int width;
 	int height;
 	float invPVM[16];
+	int randomseed;
+	int xmin;
+	int xmax;
+	int ymin;
+	int ymax;
 	DataPartition partition;
 	float order;
-	int randomseed;
 	int i;
 	int j;
 	int k;
