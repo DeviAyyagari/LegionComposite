@@ -14,6 +14,7 @@
 
 #include <boost/gil/extension/io/png_io.hpp>
 #include "composite.h"
+#include "test_mapper.h"
 #include "DataMgr.h"
 
 using namespace LegionRuntime::HighLevel;
@@ -492,9 +493,9 @@ void top_level_task(const Task *task,
 	displayLauncher.add_field(0,FID_VAL);	// Only needs the image (will map once compositor is done)
 
 	runtime->execute_task(ctx,displayLauncher); // Run the display Task
-}
+	}
 
-CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) : DefaultMapper(m, rt, p){
+CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) : ShimMapper( m, rt, rt->get_mapper_runtime(),p){
 	/**
 	 * Mapper for the compositor and renderer (will need to be modified for in-situ)
 	 */
@@ -509,14 +510,14 @@ void CompositeMapper::select_task_options(Task *task){
 	 */
 	task->inline_task = false;	// All of these off
 	task->spawn_task = false;
-	task->map_locally = false;
+	task->map_locally = true;
 	task->profile_task = false;
 	task->task_priority = 0;	// Can be used to specify some execution order (TO DO)
 	if(task->task_id == CREATE_TASK_ID){ // Map the GPU tasks onto the GPU, though
 		std::set<Processor> connectedProcs;
 		machine.get_local_processors_by_kind(connectedProcs,Processor::TOC_PROC);
 		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
-		task->target_proc = DefaultMapper::select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
+		task->target_proc = select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 	}
 	else if(task->task_id == CPU_DRAW_TASK_ID || task->task_id==CREATE_INTERFACE_TASK_ID){
 		Image img = *((Image*)task->args);
@@ -529,7 +530,7 @@ void CompositeMapper::select_task_options(Task *task){
 	else{
 			std::set<Processor> all_procs_2;
 			machine.get_all_processors(all_procs_2);
-			task->target_proc = DefaultMapper::select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
+			task->target_proc = select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
 	}
 }
 
@@ -568,9 +569,9 @@ bool CompositeMapper::map_task(Task *task){
 }
 
 PartitioningMapper::PartitioningMapper(Machine m,
-                                       HighLevelRuntime *rt,
-                                       Processor p)
-  : DefaultMapper(m, rt, p)
+					       HighLevelRuntime *rt,
+					       Processor p)
+  : ShimMapper( m,rt, rt->get_mapper_runtime(),p)
 {
 }
 

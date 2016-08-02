@@ -10,8 +10,8 @@
 
 
 #include "legion.h"
-#include "default_mapper.h"
-
+#include "shim_mapper.h"
+#include "test_mapper.h"
 
 using namespace LegionRuntime::HighLevel;
 using namespace LegionRuntime::Accessor;
@@ -107,7 +107,7 @@ struct Image{
 }; /**< Individual image metadata structure (One per leaf render) */
 
 
-class CompositeMapper : public DefaultMapper {
+class CompositeMapper : public ShimMapper {
 public:
 	CompositeMapper(Machine machine, HighLevelRuntime *rt, Processor local);
 public:
@@ -121,7 +121,7 @@ protected:
 };
 
 
-class PartitioningMapper : public DefaultMapper {
+class PartitioningMapper : public ShimMapper {
 public:
   PartitioningMapper(Machine machine,
       HighLevelRuntime *rt, Processor local);
