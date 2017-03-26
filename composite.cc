@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
-
+#include <sys/time.h>
 #include <boost/gil/extension/io/png_io.hpp>
 #include "composite.h"
 #include "test_mapper.h"
@@ -130,8 +130,8 @@ void create_interface_task(const Task *task,
 		Context ctx, HighLevelRuntime *runtime){
 	Image img = *((Image*)task->args);	// Task metadata
 	char filename[100];
-//	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
-	sprintf(filename,"heptane.raw");
+	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
+	//sprintf(filename,"heptane.raw");
 	float *volume = loadRawFile(filename, img.partition.datx, img.partition.daty, img.partition.datz);
 
 	Rect<1> dataBound = Rect<1>(0,img.partition.datx*img.partition.daty*img.partition.datz-1);	// Indexing the region used to hold the data (linearized)
@@ -280,7 +280,11 @@ void display_task(const Task *task,
 		if(counter>3) counter = 0;
 	}
 	boost::gil::rgba8c_planar_view_t view = boost::gil::planar_rgba_view(img.width, img.height, r.data(), g.data(), b.data(), a.data(), img.width);
-	boost::gil::png_write_view("out.png", view);
+	char filename[20];
+	sprintf(filename, "out%d.png",img.filename);
+	if (img.filename==0)
+		sprintf(filename,"out.png");	
+	boost::gil::png_write_view(filename, view);
 /*	cout << "Writing to File" << endl;
 	char filename[50];
 	sprintf(filename,"output.raw");
@@ -389,7 +393,7 @@ vector<LogicalRegion> loadRenderHeptane(Context ctx, HighLevelRuntime *runtime, 
 vector<LogicalRegion> loadRenderHeptane2(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
 	vector<LogicalRegion> imgs;
 	vector<Future> futures;
-
+	//clock_t tStart = clock();
 	Image img;
 	img.width = width;
 	img.height = height;
@@ -411,15 +415,18 @@ vector<LogicalRegion> loadRenderHeptane2(Context ctx, HighLevelRuntime *runtime,
 	for(unsigned int i = 0; i < futures.size(); ++i){
 		futures[i].get_void_result();
 	}
+	//cout << "Total time taken inside LoadRenderHeptane2 is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
+
 	return imgs;
 }
 
 void top_level_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
-
+	struct timeval start_tv, end_tv;
+	gettimeofday(&start_tv, NULL);
+	clock_t tStart = clock();
 	cout << "Reading data from file..." << endl;
-
 	srand(time(NULL));
 	int width = 1000;
 	int height = 1000;
@@ -441,19 +448,31 @@ void top_level_task(const Task *task,
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
 		allocator.allocate_field(sizeof(float),FID_VAL);
 	}
-	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane2(ctx, runtime, width, height, mov, imgIndex, imgField);
+	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane(ctx, runtime, width, height, mov, imgIndex, imgField);
 
 	cout << "Done rendering" << endl;
-
-
+	cout << "Total CPU time taken for rendering is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
+	gettimeofday(&end_tv, NULL);
+	cout << "Total time taken for rendering is:" << end_tv.tv_sec * 1e6 + end_tv.tv_usec - (start_tv.tv_sec * 1e6 + start_tv.tv_usec)<<" microSecs"<<endl;
+	tStart = clock();
 	compositeArguments co;
 	co.width = width;			// Total image size
 	co.height = height;
 	co.mov = mov;				// Inverse PV Matrix for tagging image
 	co.miny = 0;				// Image possible extent (in Y-Dimension)
 	co.maxy = height-1;			// For first level, must be entire image
-	
+		
+	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
+		Image tmpImage;
+tmpImage.width=width;
+tmpImage.height=height;
+tmpImage.filename=i+1;
+		TaskLauncher displayLauncher(DISPLAY_TASK_ID, TaskArgument(&tmpImage,sizeof(tmpImage)));    // Spawn a task for sending to Qt
+		displayLauncher.add_region_requirement(RegionRequirement(imgLogicalRegions[i],READ_ONLY,EXCLUSIVE,imgLogicalRegions[i]));
+		displayLauncher.add_field(0,FID_VAL);   // Only needs the image (will map once compositor is done)
 
+		runtime->execute_task(ctx,displayLauncher);
+	}
 	// Build a blanced binary tree for composition
 	vector<LogicalRegion> nodes;
 	vector<int> cores;
@@ -461,6 +480,7 @@ void top_level_task(const Task *task,
 	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
 		nodes.push_back(imgLogicalRegions[i]);
 		cores.push_back(i % num_subregions);
+		cout<<"anmol "<<i<< " "<<num_subregions<<endl;
 	}
 	Future f;
 	while(nodes.size()>1){
@@ -475,8 +495,8 @@ void top_level_task(const Task *task,
 			co.core = oldcores[primary];
 			f = setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
 			oldnodes.erase(oldnodes.begin(),oldnodes.begin()+2);
-			cores.push_back(oldcores[primary]);
 			oldcores.erase(oldcores.begin(),oldcores.begin()+2);
+			cores.push_back(oldcores[primary]);
 			nodes.push_back(output);
 		}
 		if(oldnodes.size()==1) {
@@ -493,6 +513,9 @@ void top_level_task(const Task *task,
 	displayLauncher.add_field(0,FID_VAL);	// Only needs the image (will map once compositor is done)
 
 	runtime->execute_task(ctx,displayLauncher); // Run the display Task
+	cout << "Total CPU time taken after rendring is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
+	gettimeofday(&start_tv, NULL);
+	cout << "Total time taken after rendering is:" << start_tv.tv_sec * 1e6 + start_tv.tv_usec - (end_tv.tv_sec * 1e6 + end_tv.tv_usec)<<" microSecs"<<endl;
 	}
 
 CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) : ShimMapper( m, rt, rt->get_mapper_runtime(),p){
@@ -502,6 +525,9 @@ CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) :
 	stealing_enabled = false;
 	const std::set<Processor> &cpu_procs = machine_interface.filter_processors(Processor::LOC_PROC);
 	std::copy(cpu_procs.begin(), cpu_procs.end(), std::back_inserter(all_cpus));
+	//end = clock();
+	//t=(end-start)/CLOCKS_PER_SEC;
+	//cout << "Total time taken is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
 }
 
 void CompositeMapper::select_task_options(Task *task){
@@ -517,6 +543,7 @@ void CompositeMapper::select_task_options(Task *task){
 		std::set<Processor> connectedProcs;
 		machine.get_local_processors_by_kind(connectedProcs,Processor::TOC_PROC);
 		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
+		//cout << "Number of processors is :" << select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 		task->target_proc = select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 	}
 	else if(task->task_id == CPU_DRAW_TASK_ID || task->task_id==CREATE_INTERFACE_TASK_ID){
@@ -530,6 +557,7 @@ void CompositeMapper::select_task_options(Task *task){
 	else{
 			std::set<Processor> all_procs_2;
 			machine.get_all_processors(all_procs_2);
+			//cout << "Number of processors is :" << select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
 			task->target_proc = select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
 	}
 }

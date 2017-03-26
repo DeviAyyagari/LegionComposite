@@ -101,7 +101,7 @@ struct Image{
 	int j;
 	int k;
 	int core;
-
+	int filename;
 	bool operator<( const Image& rhs ) const
 	{ return order < rhs.order; }
 }; /**< Individual image metadata structure (One per leaf render) */
