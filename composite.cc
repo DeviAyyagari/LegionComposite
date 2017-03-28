@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
-#include <sys/time.h>
+
 #include <boost/gil/extension/io/png_io.hpp>
 #include "composite.h"
 #include "test_mapper.h"
@@ -131,7 +131,7 @@ void create_interface_task(const Task *task,
 	Image img = *((Image*)task->args);	// Task metadata
 	char filename[100];
 	sprintf(filename,"heptane_%d_%d_%d.raw",img.i,img.j,img.k);
-	//sprintf(filename,"heptane.raw");
+//	sprintf(filename,"heptane.raw");
 	float *volume = loadRawFile(filename, img.partition.datx, img.partition.daty, img.partition.datz);
 
 	Rect<1> dataBound = Rect<1>(0,img.partition.datx*img.partition.daty*img.partition.datz-1);	// Indexing the region used to hold the data (linearized)
@@ -170,7 +170,7 @@ void create_interface_task(const Task *task,
 	loadLauncher.add_region_requirement(RegionRequirement(dataLogicalRegion,READ_ONLY,EXCLUSIVE,dataLogicalRegion));
 	loadLauncher.add_field(1,FID_VAL);		// Input Data as third region
 	runtime->execute_task(ctx,loadLauncher);	// Launch and terminate render task
-	
+
 }
 
 void composite(RegionAccessor<AccessorType::Generic, float> input1, RegionAccessor<AccessorType::Generic, float> input2, RegionAccessor<AccessorType::Generic, float> O, int start, int stop, compositeArguments co, float (*FA)(float), float (*FB)(float)){
@@ -243,6 +243,64 @@ void combine_task(const Task *task,
 	RegionAccessor<AccessorType::Generic,float> outputAccessor = regions[2].get_field_accessor(FID_VAL).typeify<float>();
 	compositeOver(inputAccessor1,inputAccessor2,outputAccessor,outRect.lo.x[0],outRect.hi.x[0],co); // Call the Composite 'Over' version
 }
+void display_task2(const Task *task,
+		const std::vector<PhysicalRegion> &regions,
+		Context ctx, HighLevelRuntime *runtime){
+	/**
+	 * Task for sending data to Qt Window
+	 */
+	Image img = *((Image*)task->args); // Load the image metadata
+	PhysicalRegion imgPhysicalRegion = regions[0];				// The region that holds the image pixels
+	LogicalRegion imgLogicalRegion = imgPhysicalRegion.get_logical_region();
+	IndexSpace imgIndexSpace = imgLogicalRegion.get_index_space();
+	Domain imgDomain = runtime->get_index_space_domain(ctx,imgIndexSpace);
+	Rect<2> imgBound = imgDomain.get_rect<2>();					// Get the size of the pixel data
+	RegionAccessor<AccessorType::Generic,float> accessImg = imgPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
+	imgPhysicalRegion.wait_until_valid();
+        std::vector< unsigned char> r;  // red
+	std::vector< unsigned char> g;  // green
+        std::vector< unsigned char> b;  // blue
+	std::vector< unsigned char> a;  // alpha
+
+	cout << "Writing to File out.png" << endl;
+
+	int counter = 0;
+	for(GenericPointInRectIterator<2> pir(imgBound); pir; pir++){
+		Point<1> pp(pir.p.x[1]*500+pir.p.x[0]);
+		float val = accessImg.read(DomainPoint::from_point<1>(pp));
+		if(counter == 0)
+			r.push_back(val*255);//reinterpret_cast<char*>(&val));
+		else if(counter == 1)
+			g.push_back(val*255);//reinterpret_cast<char*>(&val));
+		else if(counter == 2)
+			b.push_back(val*255);//reinterpret_cast<char*>(&val));
+		else if(counter == 3)
+			a.push_back(val*255);//reinterpret_cast<char*>(&val));
+		counter++;
+		if(counter>3) counter = 0;
+	}
+  char filename[20];
+  if (img.filename == 0)
+    sprintf(filename, "out.png");
+  else
+    sprintf(filename, "out%d.png", img.filename);
+	boost::gil::rgba8c_planar_view_t view = boost::gil::planar_rgba_view(img.width, img.height, r.data(), g.data(), b.data(), a.data(), img.width);
+	boost::gil::png_write_view(filename, view);
+/*	cout << "Writing to File" << endl;
+	char filename[50];
+	sprintf(filename,"output.raw");
+	ofstream oFile(filename, ios::out | ios::binary);
+	oFile.write(reinterpret_cast<char*>(&img.width),sizeof(int));
+	oFile.write(reinterpret_cast<char*>(&img.height),sizeof(int));
+	for(GenericPointInRectIterator<1> pir(imgBound); pir; pir++){
+		float val = accessImg.read(DomainPoint::from_point<1>(pir.p));
+		oFile.write(reinterpret_cast<char*>(&val),sizeof(float));
+	}
+	oFile.close();
+	cout << "Finished Writing" << endl;
+*/
+}
+
 
 void display_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
@@ -262,7 +320,7 @@ void display_task(const Task *task,
 	std::vector< unsigned char> g;  // green
         std::vector< unsigned char> b;  // blue
 	std::vector< unsigned char> a;  // alpha
-	
+
 	cout << "Writing to File out.png" << endl;
 
 	int counter = 0;
@@ -279,11 +337,12 @@ void display_task(const Task *task,
 		counter++;
 		if(counter>3) counter = 0;
 	}
+  char filename[20];
+  if (img.filename == 0)
+    sprintf(filename, "out.png");
+  else
+    sprintf(filename, "out%d.png", img.filename);
 	boost::gil::rgba8c_planar_view_t view = boost::gil::planar_rgba_view(img.width, img.height, r.data(), g.data(), b.data(), a.data(), img.width);
-	char filename[20];
-	sprintf(filename, "out%d.png",img.filename);
-	if (img.filename==0)
-		sprintf(filename,"out.png");	
 	boost::gil::png_write_view(filename, view);
 /*	cout << "Writing to File" << endl;
 	char filename[50];
@@ -300,15 +359,18 @@ void display_task(const Task *task,
 */
 }
 
-Future setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1, LogicalRegion input2, LogicalRegion output, compositeArguments co){
-	TaskLauncher combineLauncher(COMBINE_TASK_ID, TaskArgument(&co,sizeof(co)));
+FutureMap setupCombine(Context ctx, HighLevelRuntime *runtime, LogicalRegion input1, LogicalPartition input2, LogicalRegion output, compositeArguments co, LogicalRegion input2_lr){
+	ArgumentMap argMap;
+	Rect<1> launchRect(Point<1>(0), Point<1>(0));
+	Domain launchDomain = Domain::from_rect<1>(launchRect);
+	IndexLauncher combineLauncher(COMBINE_TASK_ID, launchDomain, TaskArgument(&co,sizeof(co)), argMap);
 	combineLauncher.add_region_requirement(RegionRequirement(input1,READ_ONLY,EXCLUSIVE,input1));
 	combineLauncher.add_field(0,FID_VAL);
-	combineLauncher.add_region_requirement(RegionRequirement(input2,READ_ONLY,EXCLUSIVE,input2));
+	combineLauncher.add_region_requirement(RegionRequirement(input2,0,READ_ONLY,EXCLUSIVE,input2_lr));
 	combineLauncher.add_field(1,FID_VAL);
 	combineLauncher.add_region_requirement(RegionRequirement(output,WRITE_DISCARD,EXCLUSIVE,output));
 	combineLauncher.add_field(2,FID_VAL);
-	return runtime->execute_task(ctx,combineLauncher);
+	return runtime->execute_index_space(ctx,combineLauncher);
 }
 
 
@@ -393,7 +455,7 @@ vector<LogicalRegion> loadRenderHeptane(Context ctx, HighLevelRuntime *runtime, 
 vector<LogicalRegion> loadRenderHeptane2(Context ctx, HighLevelRuntime *runtime, int width, int height, Movement mov, IndexSpace imgIndex, FieldSpace imgField){
 	vector<LogicalRegion> imgs;
 	vector<Future> futures;
-	//clock_t tStart = clock();
+
 	Image img;
 	img.width = width;
 	img.height = height;
@@ -415,18 +477,15 @@ vector<LogicalRegion> loadRenderHeptane2(Context ctx, HighLevelRuntime *runtime,
 	for(unsigned int i = 0; i < futures.size(); ++i){
 		futures[i].get_void_result();
 	}
-	//cout << "Total time taken inside LoadRenderHeptane2 is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
-
 	return imgs;
 }
 
 void top_level_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		Context ctx, HighLevelRuntime *runtime){
-	struct timeval start_tv, end_tv;
-	gettimeofday(&start_tv, NULL);
-	clock_t tStart = clock();
+
 	cout << "Reading data from file..." << endl;
+
 	srand(time(NULL));
 	int width = 1000;
 	int height = 1000;
@@ -441,48 +500,202 @@ void top_level_task(const Task *task,
 		assert(width >= 0);
 	}
 
-	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));
+	/*Rect<2> imgBound;
+	{
+		int low[] = {0,0};
+		int hi[] = {(width-1)*4, height-1};
+		imgBound.lo = Point<2>(low);
+		imgBound.hi = Point<2>(hi);
+	}*/
+	Rect<1> imgBound(Point<1>(0), Point<1>(width*height*4-1));
 	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound));
 	FieldSpace imgField = runtime->create_field_space(ctx);
 	{
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
 		allocator.allocate_field(sizeof(float),FID_VAL);
 	}
-	vector<LogicalRegion> imgLogicalRegions = loadRenderHeptane(ctx, runtime, width, height, mov, imgIndex, imgField);
+	vector<LogicalRegion> imgLogicalRegions_old = loadRenderHeptane(ctx, runtime, width, height, mov, imgIndex, imgField);
 
 	cout << "Done rendering" << endl;
-	cout << "Total CPU time taken for rendering is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
-	gettimeofday(&end_tv, NULL);
-	cout << "Total time taken for rendering is:" << end_tv.tv_sec * 1e6 + end_tv.tv_usec - (start_tv.tv_sec * 1e6 + start_tv.tv_usec)<<" microSecs"<<endl;
-	tStart = clock();
+vector<Image> images;						// Array to hold the metadata values in
+	int xindex = 0;
+
+	cout<<"\n size of imgLogicalRegions = "<<imgLogicalRegions_old.size();
+
+	vector <LogicalPartition>  imgLogicalRegions;
+
+	for(int i = 0; i < imgLogicalRegions_old.size(); i++){
+
+    LogicalRegion imgLogicalRegion = imgLogicalRegions_old[i];
+    RegionRequirement req(imgLogicalRegion, READ_ONLY, EXCLUSIVE, imgLogicalRegion);
+    req.add_field(FID_VAL);
+		PhysicalRegion imgPhysicalRegion = runtime->map_region(ctx, InlineLauncher(req));
+		imgPhysicalRegion.wait_until_valid();
+		IndexSpace imgIndexSpace = imgLogicalRegion.get_index_space();
+		Domain imgDomain = runtime->get_index_space_domain(ctx,imgIndexSpace);
+		Rect<1> imgBound = imgDomain.get_rect<1>();                                     // Get the size of the pixel data
+		RegionAccessor<AccessorType::Generic,float> accessImg = imgPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
+
+		std::vector< unsigned char> r;  // red
+		std::vector< unsigned char> g;  // green
+		std::vector< unsigned char> b;  // blue
+		std::vector< unsigned char> a;  // alpha
+
+		//calculate bounding box using a naive approach of traversing all pixels:
+		int counter = 0, first_rx = -1,first_ry = -1, first_gx = -1, first_gy = -1, first_bx = -1, first_by = -1,  first_ax = -1, first_ay = -1, last_rx = -1, last_ry = -1, last_gx = -1, last_gy = -1,  last_bx = -1, last_by = -1, last_ax = -1, last_ay = -1;
+		int original_counter = 0;
+		int box_topleftx, box_toplefty, box_botrightx, box_botrighty;
+		for(GenericPointInRectIterator<1> pir(imgBound); pir; pir++){
+
+			float val = accessImg.read(DomainPoint::from_point<1>(pir.p));
+			if(counter == 0){
+				r.push_back(val*255);
+				if((first_rx==-1||first_rx > original_counter%500) && val>0)
+				{	first_rx = original_counter%500;}
+				if((first_ry==-1 || original_counter/500 <  first_ry) && val > 0)
+				{	first_ry = original_counter/500;}
+
+				if((last_rx < original_counter%500 || last_rx == -1) &&val>0)
+				{	last_rx = original_counter%500;}
+				if((last_ry <original_counter/500|| last_ry == -1) && val>0)
+				{ 	last_ry = original_counter/500;}
+
+			}
+
+			else if(counter == 1){
+				g.push_back(val*255);
+				if((first_gx==-1||first_gx > original_counter%500) && val>0)
+				{       first_gx = original_counter%500;}
+				if((first_gy==-1 || original_counter/500 <  first_gy) && val > 0)
+				{       first_gy = original_counter/500;}
+
+				if((last_gx < original_counter%500 || last_gx == -1) &&val>0)
+				{       last_gx = original_counter%500;}
+				if((last_gy <original_counter/500|| last_gy == -1) && val>0)
+				{       last_gy = original_counter/500;}
+
+			}
+			else if(counter == 2){
+				b.push_back(val*255);
+				if((first_bx==-1||first_bx > original_counter%500) && val>0)
+				{       first_bx = original_counter%500;}
+				if((first_by==-1 || original_counter/500 <  first_by) && val > 0)
+				{       first_by = original_counter/500;}
+
+				if((last_bx < original_counter%500 || last_bx == -1) &&val>0)
+				{       last_bx = original_counter%500;}
+				if((last_by <original_counter/500|| last_by == -1) && val>0)
+				{       last_by = original_counter/500;}
+			}
+			else if(counter == 3){
+				a.push_back(val*255);
+
+				if((first_ax==-1||first_ax > original_counter%500) && val>0)
+				{       first_ax = original_counter%500;}
+				if((first_ay==-1 || original_counter/500 <  first_ay) && val > 0)
+				{       first_ay = original_counter/500;}
+
+				if((last_ax < original_counter%500 || last_ax == -1) &&val>0)
+				{       last_ax = original_counter%500;}
+				if((last_ay <original_counter/500|| last_ay == -1) && val>0)
+				{       last_ay = original_counter/500;}
+
+			}
+			counter++;
+			if(counter>3) {
+				counter = 0; original_counter++;
+			}
+		}
+
+		//write the individual rendered images (without cropping using the bounding boxes found):
+		//cout << "Writing to File out"<<i<<".png" << endl;
+
+		//boost::gil::rgba8c_planar_view_t view = boost::gil::planar_rgba_view(width, height, r.data(), g.data(), b.data(), a.data(), width);
+		//std::string filename ("out");
+		//filename = filename+""+std::to_string(i)+".png";
+		//boost::gil::png_write_view(filename, view);
+
+		int all_x[] = {first_ax,last_ax,first_rx, last_rx, first_gx, last_gx, first_bx, last_bx};
+		int all_y[] = {first_ay,last_ay,first_ry, last_ry, first_gy, last_gy, first_by, last_by};
+
+		//coordinates of bounding box:
+		box_topleftx = *std::min_element(all_x,all_x+sizeof(all_x)/sizeof(all_x[0]));
+		box_toplefty = *std::min_element(all_y,all_y+sizeof(all_y)/sizeof(all_y[0]));
+		box_botrightx = *std::max_element(all_x,all_x+sizeof(all_x)/sizeof(all_x[0]));
+		box_botrighty = *std::max_element(all_y,all_y+sizeof(all_y)/sizeof(all_y[0]));
+		//cout<<"\n Bounding BOX : {("<<*box_topleftx<<","<<*box_toplefty<<") to ("<<*box_botrightx<<","<<*box_botrighty<<")}\n";
+		Rect<1> color_bounds(Point<1>(0),Point<1>(0));
+		Domain color_domain = Domain::from_rect<1>(color_bounds);
+		IndexPartition ip;
+		DomainColoring coloring;
+    		Rect<1> boundedBox(Point<1>(width*4*box_toplefty+box_topleftx*4), Point<1>(width*4*box_botrighty+box_botrightx*4));
+		coloring[0] = Domain::from_rect<1>(boundedBox);
+		ip = runtime->create_index_partition(ctx, imgIndex, color_domain, 
+                                      coloring, true/*disjoint*/);
+		LogicalPartition boundedPart = runtime->get_logical_partition(ctx, imgLogicalRegion, ip);
+		imgLogicalRegions.push_back(boundedPart);
+    		//crop the rendered images using the bounding box found : modify the imgLogicalRegion holding the images
+		std::vector <unsigned char> rnew;  // red
+		std::vector<unsigned char> gnew;  // green
+		std::vector<unsigned char> bnew;  // blue
+		std::vector< unsigned char> anew;  // alpha
+
+		//new height and width
+		int wnew = box_botrightx - box_topleftx +1;
+		int hnew = box_botrighty - box_toplefty +1;
+
+    		Image tmpImage;
+    		tmpImage.width=wnew;
+    		tmpImage.height=hnew;
+    		tmpImage.filename=i+1;
+		ArgumentMap argMap;
+    		IndexLauncher displayLauncher(DISPLAY_TASK_ID, color_domain, TaskArgument(&tmpImage,sizeof(tmpImage)), argMap);    // Spawn a task for sending to Qt
+    		displayLauncher.add_region_requirement(RegionRequirement(boundedPart,0,READ_ONLY,EXCLUSIVE,imgLogicalRegion));
+    		displayLauncher.add_field(0,FID_VAL);   // Only needs the image (will map once compositor is done)
+
+    		runtime->execute_index_space(ctx,displayLauncher);
+
+
+		runtime->unmap_region(ctx, imgPhysicalRegion);
+  	}
+
 	compositeArguments co;
 	co.width = width;			// Total image size
 	co.height = height;
 	co.mov = mov;				// Inverse PV Matrix for tagging image
 	co.miny = 0;				// Image possible extent (in Y-Dimension)
 	co.maxy = height-1;			// For first level, must be entire image
-		
-	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
-		Image tmpImage;
-tmpImage.width=width;
-tmpImage.height=height;
-tmpImage.filename=i+1;
-		TaskLauncher displayLauncher(DISPLAY_TASK_ID, TaskArgument(&tmpImage,sizeof(tmpImage)));    // Spawn a task for sending to Qt
-		displayLauncher.add_region_requirement(RegionRequirement(imgLogicalRegions[i],READ_ONLY,EXCLUSIVE,imgLogicalRegions[i]));
-		displayLauncher.add_field(0,FID_VAL);   // Only needs the image (will map once compositor is done)
 
-		runtime->execute_task(ctx,displayLauncher);
-	}
+
 	// Build a blanced binary tree for composition
 	vector<LogicalRegion> nodes;
 	vector<int> cores;
 	int num_subregions = runtime->get_tunable_value(ctx, SUBREGION_TUNABLE, PARTITIONING_MAPPER_ID);
-	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
-		nodes.push_back(imgLogicalRegions[i]);
+	for(unsigned int i = 0; i < imgLogicalRegions_old.size(); ++i){
+		nodes.push_back(imgLogicalRegions_old[i]);
 		cores.push_back(i % num_subregions);
-		cout<<"anmol "<<i<< " "<<num_subregions<<endl;
 	}
-	Future f;
+	FutureMap f;
+	if (nodes.size() >1) {
+		LogicalRegion output = runtime->create_logical_region(ctx,imgIndex,imgField);
+		int primary = rand() % 2;
+		co.core = cores[primary];
+		ArgumentMap argMap;
+		Rect<1> launchRect(Point<1>(0), Point<1>(0));
+		Domain launchDomain = Domain::from_rect<1>(launchRect);
+		IndexLauncher combineLauncher(COMBINE_TASK_ID, launchDomain, TaskArgument(&co,sizeof(co)), argMap);
+		combineLauncher.add_region_requirement(RegionRequirement(imgLogicalRegions[0],0,READ_ONLY,EXCLUSIVE,imgLogicalRegions_old[0]));
+		combineLauncher.add_field(0,FID_VAL);
+		combineLauncher.add_region_requirement(RegionRequirement(imgLogicalRegions[1],0,READ_ONLY,EXCLUSIVE,imgLogicalRegions_old[1]));
+		combineLauncher.add_field(1,FID_VAL);
+		combineLauncher.add_region_requirement(RegionRequirement(output,WRITE_DISCARD,EXCLUSIVE,output));
+		combineLauncher.add_field(2,FID_VAL);
+		f = runtime->execute_index_space(ctx,combineLauncher);
+		nodes.erase(nodes.begin(),nodes.begin()+2);
+		cores.push_back(cores[primary]);
+		cores.erase(cores.begin(),cores.begin()+2);
+		nodes.push_back(output);
+	}
 	while(nodes.size()>1){
 		cout << "Spawning " << nodes.size() << " nodes" << endl;
 		vector<LogicalRegion> oldnodes = nodes;
@@ -493,10 +706,12 @@ tmpImage.filename=i+1;
 			LogicalRegion output = runtime->create_logical_region(ctx,imgIndex,imgField);
 			int primary = rand() % 2;
 			co.core = oldcores[primary];
-			f = setupCombine(ctx,runtime,oldnodes[0],oldnodes[1],output,co);
+			//LogicalPartition a = imgLogicalRegions[std::find(imgLogicalRegions_old.begin(), imgLogicalRegions_old.end(), oldnodes[0])];
+			LogicalPartition b = imgLogicalRegions[std::find(imgLogicalRegions_old.begin(), imgLogicalRegions_old.end(), oldnodes[1])-imgLogicalRegions_old.begin()];
+			f = setupCombine(ctx,runtime,oldnodes[0],b,output,co, oldnodes[1]);
 			oldnodes.erase(oldnodes.begin(),oldnodes.begin()+2);
-			oldcores.erase(oldcores.begin(),oldcores.begin()+2);
 			cores.push_back(oldcores[primary]);
+			oldcores.erase(oldcores.begin(),oldcores.begin()+2);
 			nodes.push_back(output);
 		}
 		if(oldnodes.size()==1) {
@@ -505,17 +720,14 @@ tmpImage.filename=i+1;
 		}
 	}
 	cout << "Done Spawning" << endl;
-	f.get_void_result();
+	f.wait_all_results();
 	cout << "Done Compositing" << endl;
-	
+
 	TaskLauncher displayLauncher(DISPLAY_TASK_ID, TaskArgument(&co,sizeof(co)));	// Spawn a task for sending to Qt
 	displayLauncher.add_region_requirement(RegionRequirement(nodes[0],READ_ONLY,EXCLUSIVE,nodes[0]));
 	displayLauncher.add_field(0,FID_VAL);	// Only needs the image (will map once compositor is done)
 
 	runtime->execute_task(ctx,displayLauncher); // Run the display Task
-	cout << "Total CPU time taken after rendring is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
-	gettimeofday(&start_tv, NULL);
-	cout << "Total time taken after rendering is:" << start_tv.tv_sec * 1e6 + start_tv.tv_usec - (end_tv.tv_sec * 1e6 + end_tv.tv_usec)<<" microSecs"<<endl;
 	}
 
 CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) : ShimMapper( m, rt, rt->get_mapper_runtime(),p){
@@ -525,9 +737,6 @@ CompositeMapper::CompositeMapper(Machine m, HighLevelRuntime *rt, Processor p) :
 	stealing_enabled = false;
 	const std::set<Processor> &cpu_procs = machine_interface.filter_processors(Processor::LOC_PROC);
 	std::copy(cpu_procs.begin(), cpu_procs.end(), std::back_inserter(all_cpus));
-	//end = clock();
-	//t=(end-start)/CLOCKS_PER_SEC;
-	//cout << "Total time taken is:" << (double)(clock() - tStart)/CLOCKS_PER_SEC << endl;
 }
 
 void CompositeMapper::select_task_options(Task *task){
@@ -543,7 +752,6 @@ void CompositeMapper::select_task_options(Task *task){
 		std::set<Processor> connectedProcs;
 		machine.get_local_processors_by_kind(connectedProcs,Processor::TOC_PROC);
 		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
-		//cout << "Number of processors is :" << select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 		task->target_proc = select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
 	}
 	else if(task->task_id == CPU_DRAW_TASK_ID || task->task_id==CREATE_INTERFACE_TASK_ID){
@@ -557,7 +765,6 @@ void CompositeMapper::select_task_options(Task *task){
 	else{
 			std::set<Processor> all_procs_2;
 			machine.get_all_processors(all_procs_2);
-			//cout << "Number of processors is :" << select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
 			task->target_proc = select_random_processor(all_procs_2, Processor::LOC_PROC, machine);
 	}
 }
@@ -638,6 +845,9 @@ int main(int argc, char **argv){
 	HighLevelRuntime::register_legion_task<display_task>(DISPLAY_TASK_ID,		// Register Qt Display connection task (Leaf Task)
 				Processor::LOC_PROC, true/*single*/, true/*index*/,
 				AUTO_GENERATE_ID, TaskConfigOptions(false, false), "display_task");
+	HighLevelRuntime::register_legion_task<display_task2>(65,		// Register Qt Display connection task (Leaf Task)
+				Processor::LOC_PROC, true/*single*/, true/*index*/,
+				AUTO_GENERATE_ID, TaskConfigOptions(false, false), "display_task2");
 	HighLevelRuntime::register_legion_task<create_task>(CREATE_TASK_ID,			// Register the GPU render task (Leaf Task, TOC processor)
 				Processor::TOC_PROC, true/*single*/, true/*index*/,
 				AUTO_GENERATE_ID, TaskConfigOptions(false, false), "create_task");
