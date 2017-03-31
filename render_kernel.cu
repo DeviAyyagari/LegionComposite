@@ -8,8 +8,8 @@
 #ifndef RENDER_CU
 #define RENDER_CU
 
-#include "cuda.h"
-#include "cuda_runtime.h"
+//#include "cuda.h"
+//#include "cuda_runtime.h"
 #include "cuda_helper.h"
 #include "helper_math.h"
 
@@ -24,7 +24,7 @@ typedef struct
 	float4 m[4];
 } float4x4; /**< Matrix Holding form */
 
-__device__
+//__device__
 float4 mul(const float4x4 &M, const float4 &v){
 	/**
 	 * Multiply a 4x4 Matrix with a 1x4 vector
@@ -38,7 +38,7 @@ float4 mul(const float4x4 &M, const float4 &v){
 	return r;
 }
 
-__device__
+//__device__
 float4 divW(float4 v){
 	/**
 	 * Divide a 4-vector by it's homogeneous coordinate
@@ -56,7 +56,7 @@ struct MyRay{
 
 
 
-__device__
+//__device__
 int intersectBox(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *tfar){
 	/**
 	 * Check if a ray intersects with the data partition
@@ -81,7 +81,7 @@ int intersectBox(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *tfa
 }
 
 
-__device__
+//__device__
 int intersectBoxAlt(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *tfar){ 
     float tmin = (boxmin.x - r.o.x) / r.d.x; 
     float tmax = (boxmax.x - r.o.x) / r.d.x; 
@@ -133,7 +133,7 @@ int intersectBoxAlt(MyRay r, float3 boxmin, float3 boxmax, float *tnear, float *
     return true; 
 } 
 
-__device__
+//__device__
 void drawPixel(float* imgPtr, int x, int y, int imageW, float r, float g, float b, float a){
 	/**
 	 * Populate a Legion region with a particular pixel
@@ -145,7 +145,7 @@ void drawPixel(float* imgPtr, int x, int y, int imageW, float r, float g, float 
 	imgPtr[writePoint] = a;
 }
 
-__device__
+//__device__
 float interpolate(float* dataPtr, float3 pos, int3 partitionSize){
 	/**
 	 * Replicate Texture functionality with a trilinear interpolant
@@ -174,13 +174,13 @@ float interpolate(float* dataPtr, float3 pos, int3 partitionSize){
 }
 
 
-__global__ void
-d_render(int imageW, int imageH,
+//__global__ void
+void d_render(int imageW, int imageH,
 		int3 boxSize, float3 minBound, float3 maxBound,
 		float density, float brightness,
 		float transferOffset, float transferScale, 
 		float* imgPtr,
-		float4x4 invPVMMatrix, float* dataPtr)
+		float4x4 invPVMMatrix, float* dataPtr, uint x, uint y)
 {
 	/**
 	 * Kernal renderer for individual ray tracing
@@ -191,9 +191,10 @@ d_render(int imageW, int imageH,
 	const float opacityThreshold = 0.95f;	// Arbitrarily defined alpha cutoff
 	
 
-	uint x = blockIdx.x*blockDim.x + threadIdx.x;	// Current pixel x value
-	uint y = blockIdx.y*blockDim.y + threadIdx.y;	// Current pixel y value
-	
+	//uint x = blockIdx.x*blockDim.x + threadIdx.x;	// Current pixel x value
+	//uint y = blockIdx.y*blockDim.y + threadIdx.y;	// Current pixel y value
+//printf("anmol: x:%d y:%d blockIdx.x:%d blockDim.x:%d threadIdx.x:%d\n",x,y,blockIdx.x, blockDim.x,threadIdx.x);	
+//printf("anmol: x:%d y:%d blockIdx.y:%d blockDim.y:%d threadIdx.y:%d\n",x,y,blockIdx.y, blockDim.y,threadIdx.y);	
 
 	if ((x >= imageW) || (y >= imageH)) return;
 
@@ -561,7 +562,7 @@ d_render(int imageW, int imageH,
 }
 
 
-__host__
+//__host__
 int iDivUp(int a, int b){
 	/**
 	 * Integer division with rounding up
@@ -569,7 +570,7 @@ int iDivUp(int a, int b){
 	return (a % b != 0) ? (a / b + 1) : (a / b);
 }
 
-__host__
+//__host__
 void create_task(const Task *task,
 		const std::vector<PhysicalRegion> &regions,
 		LegionRuntime::HighLevel::Context ctx, HighLevelRuntime *runtime){
@@ -598,8 +599,8 @@ void create_task(const Task *task,
 		invPVMMatrix.m[i].w = tmpimg.invPVM[4*i+3];
 	}
 
-	dim3 blockSize = dim3(16,16);	// Define kernal execution block size
-	dim3 gridSize = dim3(iDivUp(width, blockSize.x), iDivUp(height, blockSize.y)); // Number of pixels per block
+//	dim3 blockSize = dim3(16,16);	// Define kernal execution block size
+//	dim3 gridSize = dim3(iDivUp(width, blockSize.x), iDivUp(height, blockSize.y)); // Number of pixels per block
 
 
 	Domain dataDomain = runtime->get_index_space_domain(ctx,regions[1].get_logical_region().get_index_space());
@@ -629,8 +630,11 @@ void create_task(const Task *task,
 //	float3 minBound = make_float3(0.0,0.0,0.0);
 //	float3 maxBound = make_float3(5.0,5.0,5.0);
 
-	d_render<<<gridSize, blockSize>>>(width,height,boxSize,minBound,maxBound,density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
-
-	cudaDeviceSynchronize();
+//	d_render<<<gridSize, blockSize>>>(width,height,boxSize,minBound,maxBound,density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr);
+for(int i =0;i<width;i++) {
+	for(int j=0;j<height;j++)
+		d_render(width,height,boxSize,minBound,maxBound,density,brightness,transferOffset,transferScale,imgPtr,invPVMMatrix, dataPtr, i, j);
+}
+//cudaDeviceSynchronize();
 }
 #endif

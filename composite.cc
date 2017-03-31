@@ -541,10 +541,10 @@ void CompositeMapper::select_task_options(Task *task){
 	task->task_priority = 0;	// Can be used to specify some execution order (TO DO)
 	if(task->task_id == CREATE_TASK_ID){ // Map the GPU tasks onto the GPU, though
 		std::set<Processor> connectedProcs;
-		machine.get_local_processors_by_kind(connectedProcs,Processor::TOC_PROC);
+		machine.get_local_processors_by_kind(connectedProcs,Processor::LOC_PROC);
 		machine.get_shared_processors(task->regions[1].selected_memory,connectedProcs);
 		//cout << "Number of processors is :" << select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
-		task->target_proc = select_random_processor(connectedProcs, Processor::TOC_PROC, machine);
+		task->target_proc = select_random_processor(connectedProcs, Processor::LOC_PROC, machine);
 	}
 	else if(task->task_id == CPU_DRAW_TASK_ID || task->task_id==CREATE_INTERFACE_TASK_ID){
 		Image img = *((Image*)task->args);
@@ -568,7 +568,7 @@ bool CompositeMapper::map_task(Task *task){
 	 * Control memory mapping for each task
 	 */
 	if (task->task_id == CREATE_TASK_ID){ // If running on the GPU
-		Memory fb_mem = machine_interface.find_memory_kind(task->target_proc,Memory::GPU_FB_MEM); // Get FrameBuffer Memories
+		Memory fb_mem = machine_interface.find_memory_kind(task->target_proc,Memory::SYSTEM_MEM); // Get FrameBuffer Memories
 		assert(fb_mem.exists()); // Make sure it is supported
 		for (unsigned idx = 0; idx < task->regions.size(); idx++){ 	// Step through all regions
 			task->regions[idx].target_ranking.push_back(fb_mem); 	//	and map them to the framebuffer memory
@@ -639,7 +639,7 @@ int main(int argc, char **argv){
 				Processor::LOC_PROC, true/*single*/, true/*index*/,
 				AUTO_GENERATE_ID, TaskConfigOptions(false, false), "display_task");
 	HighLevelRuntime::register_legion_task<create_task>(CREATE_TASK_ID,			// Register the GPU render task (Leaf Task, TOC processor)
-				Processor::TOC_PROC, true/*single*/, true/*index*/,
+				Processor::LOC_PROC, true/*single*/, true/*index*/,
 				AUTO_GENERATE_ID, TaskConfigOptions(false, false), "create_task");
 	HighLevelRuntime::register_legion_task<combine_task>(COMBINE_TASK_ID,		// Register combination task (Leaf Task)
 			Processor::LOC_PROC, true/*single*/, true/*index*/,
