@@ -173,28 +173,31 @@ void create_interface_task(const Task *task,
 	
 }
 
-void composite(RegionAccessor<AccessorType::Generic, float> input1, RegionAccessor<AccessorType::Generic, float> input2, RegionAccessor<AccessorType::Generic, float> O, int start, int stop, compositeArguments co, float (*FA)(float), float (*FB)(float)){
+void composite(RegionAccessor<AccessorType::Generic, float> input1, RegionAccessor<AccessorType::Generic, float> input2, RegionAccessor<AccessorType::Generic, float> O, coord_t start[2], coord_t stop[2], compositeArguments co, float (*FA)(float), float (*FB)(float)){
 	/**
 	 * Generic alpha compositing that can be called with adjustable functions for different operations
 	 */
-	Point<1> input1Point(start);
-	Point<1> input2Point(start);
-	Point<1> OPoint(start); 											// Scanning point for output region
+	Point<2> input1Point(start);
+	Point<2> input2Point(start);
+	Point<2> OPoint(start); 											// Scanning point for output region
 
+for(int k = start[1]; k <= stop[1]; k++) {
+input1Point.x[1] = input2Point.x[1] = OPoint.x[1] = k;
+input1Point.x[0] = input2Point.x[0] = OPoint.x[0] = start[0];
 
-	for(int i = start; i < stop;i+=4){	//  Step through all of the data in groups of 4 (RGBA pixels)
+	for(int i = start[0]; i < stop[0];i+=4){	//  Step through all of the data in groups of 4 (RGBA pixels)
 		input1Point.x[0]+=3;	// Increment by 3 to get the alpha value
 		input2Point.x[0]+=3;
-		float alphaA = input1.read(DomainPoint::from_point<1>(input1Point));
-		float alphaB = input2.read(DomainPoint::from_point<1>(input2Point));
+		float alphaA = input1.read(DomainPoint::from_point<2>(input1Point));
+		float alphaB = input2.read(DomainPoint::from_point<2>(input2Point));
 		input1Point.x[0]-=3;	// Step back in place for the red value
 		input2Point.x[0]-=3;
 		float alphaC = alphaA*FA(alphaB)+alphaB*FB(alphaA); // Compute the output alpha
 		if(alphaC!=0){			// If there is a non-zero alpha
 			for(int j = 0; j < 3; ++j){	// For each of R, G, B
-				float A = input1.read(DomainPoint::from_point<1>(input1Point));
-				float B = input2.read(DomainPoint::from_point<1>(input2Point));
-				O.write(DomainPoint::from_point<1>(OPoint),(A*alphaA*FA(alphaB)+B*alphaB*FB(alphaA))/alphaC); // Compute composite and write
+				float A = input1.read(DomainPoint::from_point<2>(input1Point));
+				float B = input2.read(DomainPoint::from_point<2>(input2Point));
+				O.write(DomainPoint::from_point<2>(OPoint),(A*alphaA*FA(alphaB)+B*alphaB*FB(alphaA))/alphaC); // Compute composite and write
 				input1Point.x[0]++; // Step to next point
 				input2Point.x[0]++;
 				OPoint.x[0]++;
@@ -202,20 +205,21 @@ void composite(RegionAccessor<AccessorType::Generic, float> input1, RegionAccess
 		}
 		else{	// If Alpha is zero
 			for(int j = 0; j < 3; ++j){
-				O.write(DomainPoint::from_point<1>(OPoint),0.0); // Fill RGB with zeros
+				O.write(DomainPoint::from_point<2>(OPoint),0.0); // Fill RGB with zeros
 				OPoint.x[0]++;
 			}
 			input1Point.x[0]+=3;
 			input2Point.x[0]+=3;
 		}
-		O.write(DomainPoint::from_point<1>(OPoint),alphaC); // Write output alpha
+		O.write(DomainPoint::from_point<2>(OPoint),alphaC); // Write output alpha
 		OPoint.x[0]++;		// Increment for next pixel
 		input1Point.x[0]++;
 		input2Point.x[0]++;
 	}
 }
+}
 
-void compositeOver(RegionAccessor<AccessorType::Generic, float> input1, RegionAccessor<AccessorType::Generic, float> input2, RegionAccessor<AccessorType::Generic, float> imgO, int start, int stop, compositeArguments co){
+void compositeOver(RegionAccessor<AccessorType::Generic, float> input1, RegionAccessor<AccessorType::Generic, float> input2, RegionAccessor<AccessorType::Generic, float> imgO, coord_t start[2], coord_t stop[2], compositeArguments co){
 	/**
 	 *  Alpha 'Over' Compositing
 	 */
@@ -231,7 +235,7 @@ void combine_task(const Task *task,
 	assert(regions.size()==3);
 	compositeArguments co = *((compositeArguments*)task->args); // Get metadata properties
 	Domain outDomain = runtime->get_index_space_domain(ctx,regions[2].get_logical_region().get_index_space());
-	Rect<1> outRect = outDomain.get_rect<1>();			// Get the size of the return image
+	Rect<2> outRect = outDomain.get_rect<2>();			// Get the size of the return image
 	PhysicalRegion img0 = regions[0];
 	img0.wait_until_valid();
 	PhysicalRegion img1 = regions[1];
@@ -241,7 +245,7 @@ void combine_task(const Task *task,
 	RegionAccessor<AccessorType::Generic,float> inputAccessor1 = regions[0].get_field_accessor(FID_VAL).typeify<float>();
 	RegionAccessor<AccessorType::Generic,float> inputAccessor2 = regions[1].get_field_accessor(FID_VAL).typeify<float>();
 	RegionAccessor<AccessorType::Generic,float> outputAccessor = regions[2].get_field_accessor(FID_VAL).typeify<float>();
-	compositeOver(inputAccessor1,inputAccessor2,outputAccessor,outRect.lo.x[0],outRect.hi.x[0],co); // Call the Composite 'Over' version
+	compositeOver(inputAccessor1,inputAccessor2,outputAccessor,outRect.lo.x,outRect.hi.x,co); // Call the Composite 'Over' version
 }
 
 void display_task(const Task *task,
@@ -255,7 +259,7 @@ void display_task(const Task *task,
 	LogicalRegion imgLogicalRegion = imgPhysicalRegion.get_logical_region();
 	IndexSpace imgIndexSpace = imgLogicalRegion.get_index_space();
 	Domain imgDomain = runtime->get_index_space_domain(ctx,imgIndexSpace);
-	Rect<1> imgBound = imgDomain.get_rect<1>();					// Get the size of the pixel data
+	Rect<2> imgBound = imgDomain.get_rect<2>();					// Get the size of the pixel data
 	RegionAccessor<AccessorType::Generic,float> accessImg = imgPhysicalRegion.get_field_accessor(FID_VAL).typeify<float>();
 	imgPhysicalRegion.wait_until_valid();
         std::vector< unsigned char> r;  // red
@@ -266,8 +270,8 @@ void display_task(const Task *task,
 	cout << "Writing to File out.png" << endl;
 
 	int counter = 0;
-	for(GenericPointInRectIterator<1> pir(imgBound); pir; pir++){
-		float val = accessImg.read(DomainPoint::from_point<1>(pir.p));
+	for(GenericPointInRectIterator<2> pir(imgBound); pir; pir++){
+		float val = accessImg.read(DomainPoint::from_point<2>(pir.p));
 		if(counter == 0)
 			r.push_back(val*255);//reinterpret_cast<char*>(&val));
 		else if(counter == 1)
@@ -441,8 +445,12 @@ void top_level_task(const Task *task,
 		assert(width >= 0);
 	}
 
-	Rect<1> imgBound(Point<1>(0),Point<1>(width*height*4-1));
-	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<1>(imgBound));
+	Rect<2> imgBound;
+	int lo[] = {0,0};
+	int hi[] = {width*4-1, height-1};
+	imgBound.lo = Point<2>(lo);
+	imgBound.hi = Point<2>(hi);
+	IndexSpace imgIndex = runtime->create_index_space(ctx, Domain::from_rect<2>(imgBound));
 	FieldSpace imgField = runtime->create_field_space(ctx);
 	{
 		FieldAllocator allocator = runtime->create_field_allocator(ctx,imgField);
