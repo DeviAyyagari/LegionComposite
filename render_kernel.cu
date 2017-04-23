@@ -610,10 +610,10 @@ void create_task(const Task *task,
 	
 
 	Domain imgDomain = runtime->get_index_space_domain(ctx,regions[0].get_logical_region().get_index_space());
-	Rect<1> imgRect = imgDomain.get_rect<1>();
-	Rect<1> imgSubRect;
-	ByteOffset imgOffsets[1];
-	float* imgPtr = imgAccessor.raw_rect_ptr<1>(imgRect,imgSubRect,imgOffsets);	// For output image as well
+	Rect<2> imgRect = imgDomain.get_rect<2>();
+	Rect<2> imgSubRect;
+	ByteOffset imgOffsets[2];
+	float* imgPtr = imgAccessor.raw_rect_ptr<2>(imgRect,imgSubRect,imgOffsets);	// For output image as well
 
 //	int3 lowerBound = make_int3(tmpimg.partition.xmin, tmpimg.partition.ymin, tmpimg.partition.zmin);
 //	int3 upperBound = make_int3(tmpimg.partition.xmax,tmpimg.partition.ymax,tmpimg.partition.zmax);
