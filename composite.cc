@@ -16,6 +16,9 @@
 #include "composite.h"
 #include "test_mapper.h"
 #include "DataMgr.h"
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/type_ptr.hpp"
 
 using namespace LegionRuntime::HighLevel;
 using namespace LegionRuntime::Accessor;
@@ -434,8 +437,8 @@ void top_level_task(const Task *task,
 	srand(time(NULL));
 	int width = 1000;
 	int height = 1000;
-	Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
-			141.421, -100., -2000., -1883.58, 0., 0., 0., 1.},1.0};
+	//Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
+//			141.421, -100., -2000., -1883.58, 0., 0., 0., 1.},1.0};
 
 
 	const InputArgs &command_args = HighLevelRuntime::get_input_args();
@@ -444,6 +447,23 @@ void top_level_task(const Task *task,
 		height = width;
 		assert(width >= 0);
 	}
+
+	float nearPlane = 2.6;//;0.6634;
+	float farPlane = 6.13;//2.19456;
+	glm::mat4 viewMat = glm::lookAt(
+    		glm::vec3(1.25, 2.51, 1.93943), 	// Camera
+    		glm::vec3(150, 150, 150), 		// look at
+    		glm::vec3(0,1,0)  					// up
+    		);
+	glm::mat4 projMat = glm::perspective(glm::radians(5.0f), (float) width / (float)height, nearPlane, farPlane);
+	glm::mat4 mvp = projMat * viewMat; // Remember, matrix multiplication is the other way around
+	glm::mat4 inverseMVP = glm::inverse(mvp);
+
+	Movement mov;
+	const float *inverseMVPSource = (const float*)glm::value_ptr(inverseMVP);
+	for (int i = 0; i < 16; ++i)
+    		mov.invPVM[i] = inverseMVPSource[i];
+	mov.xdat = 1.0;
 
 	Rect<2> imgBound;
 	int lo[] = {0,0};
