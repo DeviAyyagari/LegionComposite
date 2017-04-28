@@ -12,7 +12,7 @@
 //#include "cuda_runtime.h"
 #include "cuda_helper.h"
 #include "helper_math.h"
-
+#include "stdlib.h"
 
 #include "composite.h"
 
@@ -153,6 +153,7 @@ float interpolate(float* dataPtr, float3 pos, int3 partitionSize){
 	int3 originPoint = make_int3(floor(pos.x),floor(pos.y),floor(pos.z)); 		// Find the corner of the box the point is in
 	float3 point = pos-make_float3(originPoint.x,originPoint.y,originPoint.z);	// Find the location of the point within the box
 	float3 complement = make_float3(1,1,1)-point;								// Compute the distance to the opposite corner
+	//std::cout << "CHECK 1" << std::endl;
 	auto getPoint = [&](int x, int y, int z){									// Lambda function: Get a particular point from volumetric data
 	int3 p = originPoint + make_int3(x,y,z);									//		Only works on integer values
 		if(p.x>=partitionSize.x ||		// 	Make sure the point is in the array
@@ -162,6 +163,7 @@ float interpolate(float* dataPtr, float3 pos, int3 partitionSize){
 		else
 			return dataPtr[p.z*partitionSize.y*partitionSize.x+p.y*partitionSize.x+p.x];	// Get the point from legion X->Y->Z
 	};
+	//std::cout << "CHECK2" << std::endl;
 	float sample = 	getPoint(0,0,0) *	complement.x *	complement.y *	complement.z +	// Standard trilinear interpolant
 					getPoint(1,0,0) *	point.x		 *	complement.y *	complement.z +
 					getPoint(0,1,0) *	complement.x *	point.y		 *	complement.z +
@@ -170,6 +172,7 @@ float interpolate(float* dataPtr, float3 pos, int3 partitionSize){
 					getPoint(0,1,1) *	complement.x *	point.y		 *	point.z		 +
 					getPoint(1,1,0) *	point.x		 *	point.y		 *	complement.z +
 					getPoint(1,1,1) *	point.x		 *	point.y		 *	point.z;
+	//std::cout << "CHECK3" << std::endl;
 	return sample;
 }
 
@@ -522,7 +525,11 @@ void d_render(int imageW, int imageH,
 		for (int i=0; i<maxSteps; i++){
 //			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
 				float sample = interpolate(dataPtr,pos,boxSize);
+				//std::cout << "CHECK 4" << std::endl;
+				if(sample==sample){//sample = 0;}
+				//float sample = 1.0f;
 				float4 col;
+				//std::cout <<"SAMPLE IS:" << (int)floor(sample*256) << std::endl;
 				col = cols[(int)floor(sample*256)];
 //				if(sample>0) col.w = 0.05;
 //				if(sample<0.01) col.w = 0;
@@ -542,11 +549,12 @@ void d_render(int imageW, int imageH,
 				col.y *= col.w;
 				col.z *= col.w;
 				// "over" operator for front-to-back blending
+				//std::cout << "CHECK 5" << std::endl;
 				sum += col*(1.0f - sum.w);
 
 				// exit early if opaque
 				if (sum.w > opacityThreshold)
-					break;
+					break;}
 				
 //			}
 //			sum.x += 0.1
@@ -556,7 +564,7 @@ void d_render(int imageW, int imageH,
 			pos += step;
 		}
 
-		
+		//std::cout << "CHECK 6" << std::endl;
 		drawPixel(imgPtr,x,y,imageW,(float)sum.x*brightness,(float)sum.y*brightness,(float)sum.z*brightness,(float)sum.w);
 	}
 }
