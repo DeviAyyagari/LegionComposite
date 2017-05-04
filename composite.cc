@@ -16,6 +16,10 @@
 #include "composite.h"
 #include "test_mapper.h"
 #include "DataMgr.h"
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/type_ptr.hpp"
+#include "glm/ext.hpp"
 
 using namespace LegionRuntime::HighLevel;
 using namespace LegionRuntime::Accessor;
@@ -285,8 +289,8 @@ void display_task(const Task *task,
 	}
 	boost::gil::rgba8c_planar_view_t view = boost::gil::planar_rgba_view(img.width, img.height, r.data(), g.data(), b.data(), a.data(), img.width);
 	char filename[20];
-	sprintf(filename, "out%d.png",img.filename);
-	if (img.filename==0)
+//	sprintf(filename, "out%d.png",img.filename);
+//	if (img.filename==0)
 		sprintf(filename,"out.png");	
 	boost::gil::png_write_view(filename, view);
 /*	cout << "Writing to File" << endl;
@@ -434,9 +438,9 @@ void top_level_task(const Task *task,
 	srand(time(NULL));
 	int width = 1000;
 	int height = 1000;
-	Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
+/*	Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
 			141.421, -100., -2000., -1883.58, 0., 0., 0., 1.},1.0};
-
+*/
 
 	const InputArgs &command_args = HighLevelRuntime::get_input_args();
 	if (command_args.argc > 1){
@@ -445,6 +449,75 @@ void top_level_task(const Task *task,
 		assert(width >= 0);
 	}
 
+	float nearPlane =10;// -10;//;0.6634;
+	float farPlane = 1500; //500;//6.13;//2.19456;
+	glm::vec3 eye(-100,350,350);//(0,150,10);
+	glm::vec3 at(151,151,151);//(1,151,0);
+	glm::vec3 up(0,1,0);
+	float angle =60.0;// 60.0;
+	cout<<"Constant Value: eye:"<<glm::to_string(eye)<<endl;
+	cout<<"Constant Value: at:"<<glm::to_string(at)<<endl;
+	cout<<"Constant Value: up:"<<glm::to_string(up)<<endl;
+	cout<<"Constant Value: nearplane:"<<nearPlane<<endl;
+	cout<<"Constant Value: farplane:"<<farPlane<<endl;
+	cout<<"Constant Value: angle:"<<angle<<endl;
+	
+	glm::mat4 modelMat = glm::mat4(1.0f);
+	//modelMat[3][0] = -1;
+	//modelMat[3][1] = -1;
+	//modelMat[3][2] = -1;
+	glm::mat4 viewMat = glm::lookAt(
+    		eye, 	// Camera
+    		at,		// look at
+    		up  					// up
+    		);
+
+/*	float view[] = {-1.0,0,0,0, 0,1.0,0,0, 0,0,1.0,0, 151.0,-151.0,262.0,1}; //setting in column major order for glm
+	glm::mat4 viewMat = glm::make_mat4(view);
+*/	const float *t = (const float*)glm::value_ptr(viewMat);
+	cout << "View Matrix" <<endl;
+        for (int i = 0; i < 4; ++i){
+		for(int j=0;j<4;j++)
+                	printf("%12.5f\t",t[4*j+i]);
+		cout<<endl;
+                        }
+	//glm::mat4 projMat = glm::perspective(glm::radians(5.0f), (float) width / (float)height, nearPlane, farPlane);
+	glm::mat4 projMat = glm::perspective(glm::radians(angle), (float) width / (float)height, nearPlane, farPlane);
+	//glm::mat4 projMat = glm::ortho((float)-200, (float)200, (float)-200, (float)200, (float)-1, (float)-350);
+	//glm::mat4 projMat = glm::mat4(1.0f);
+	const float *t1 = (const float*)glm::value_ptr(projMat);
+	cout << "Projection Matrix" << endl;
+        for (int i = 0; i < 4; ++i){
+		for(int j=0;j<4;j++)
+                	printf("%12.5f\t",t1[4*j+i]);
+		cout<<endl;
+                        }
+	glm::mat4 mvp = projMat * viewMat * modelMat; // Remember, matrix multiplication is the other way around
+	//mvp = mvp /(float)width;
+	const float *t2 = (const float*)glm::value_ptr(mvp);
+        cout << "PVM Matrix" << endl;
+        for (int i = 0; i < 4; ++i){
+		for(int j=0;j<4;j++)
+                	printf("%12.5f\t",t2[4*j+i]);
+		cout<<endl;
+                        }
+	glm::mat4 inverseMVP = glm::inverse(mvp);
+	glm::mat4 transposeInverseMVP = glm::transpose(inverseMVP);
+
+	Movement mov;
+	const float *inverseMVPSource = (const float*)glm::value_ptr(transposeInverseMVP);
+	cout << "Inverse PVM matrix" << endl;
+	for (int i = 0; i < 16; ++i){
+    		mov.invPVM[i] = inverseMVPSource[i];
+		//mov.invPVM[i] = mov.invPVM[i]*(float)width;
+		//cout <<  mov.invPVM[i] << endl;
+	}
+        for (int i = 0; i < 4; ++i){
+		for(int j=0;j<4;j++)
+                	printf("%12.5f\t",mov.invPVM[4*j+i]);
+		cout<<endl;
+                        }
+	mov.xdat = 1.0;
 	Rect<2> imgBound;
 	int lo[] = {0,0};
 	int hi[] = {width*4-1, height-1};
@@ -470,17 +543,19 @@ void top_level_task(const Task *task,
 	co.miny = 0;				// Image possible extent (in Y-Dimension)
 	co.maxy = height-1;			// For first level, must be entire image
 		
+/*	Print intermediate images
 	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
 		Image tmpImage;
-tmpImage.width=width;
-tmpImage.height=height;
-tmpImage.filename=i+1;
+		tmpImage.width=width;
+		tmpImage.height=height;
+		tmpImage.filename=i+1;
 		TaskLauncher displayLauncher(DISPLAY_TASK_ID, TaskArgument(&tmpImage,sizeof(tmpImage)));    // Spawn a task for sending to Qt
 		displayLauncher.add_region_requirement(RegionRequirement(imgLogicalRegions[i],READ_ONLY,EXCLUSIVE,imgLogicalRegions[i]));
 		displayLauncher.add_field(0,FID_VAL);   // Only needs the image (will map once compositor is done)
 
 		runtime->execute_task(ctx,displayLauncher);
 	}
+*/
 	// Build a blanced binary tree for composition
 	vector<LogicalRegion> nodes;
 	vector<int> cores;
@@ -488,7 +563,6 @@ tmpImage.filename=i+1;
 	for(unsigned int i = 0; i < imgLogicalRegions.size(); ++i){
 		nodes.push_back(imgLogicalRegions[i]);
 		cores.push_back(i % num_subregions);
-		cout<<"anmol "<<i<< " "<<num_subregions<<endl;
 	}
 	Future f;
 	while(nodes.size()>1){
