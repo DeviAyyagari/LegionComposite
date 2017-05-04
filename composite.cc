@@ -438,10 +438,10 @@ void top_level_task(const Task *task,
 	srand(time(NULL));
 	int width = 1000;
 	int height = 1000;
-	/*Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
+/*	Movement mov = {{141.421, 100., 2000., 2166.42, 0., 141.421, -2828.43, -2651.65, \
 			141.421, -100., -2000., -1883.58, 0., 0., 0., 1.},1.0};
-
-	*/
+*/
+	
 	const InputArgs &command_args = HighLevelRuntime::get_input_args();
 	if (command_args.argc > 1){
 		width = atoi(command_args.argv[1]);
@@ -449,10 +449,10 @@ void top_level_task(const Task *task,
 		assert(width >= 0);
 	}
 
-	float nearPlane =1;// -10;//;0.6634;
+	float nearPlane =150;// -10;//;0.6634;
 	float farPlane = 500; //500;//6.13;//2.19456;
-	glm::vec3 eye(0,150,10);//(0,150,10);
-	glm::vec3 at(0,150,0);//(1,151,0);
+	glm::vec3 eye(151,151,-151);//(0,150,10);
+	glm::vec3 at(131,151,151);//(1,151,0);
 	glm::vec3 up(0,1,0);
 	float angle =60.0;// 60.0;
 	cout<<"Constant Value: eye:"<<glm::to_string(eye)<<endl;
@@ -466,15 +466,15 @@ void top_level_task(const Task *task,
 	//modelMat[3][0] = -1;
 	//modelMat[3][1] = -1;
 	//modelMat[3][2] = -1;
-	/*glm::mat4 viewMat = glm::lookAt(
+	glm::mat4 viewMat = glm::lookAt(
     		eye, 	// Camera
     		at,		// look at
     		up  					// up
     		);
-	*/
-	float view[] = {1.0,0,0,0, 0,1.0,0,0, 0,0,1.0,0, 0,150.0,10.0,1.0}; //setting in column major order for glm
+
+/*	float view[] = {-1.0,0,0,0, 0,1.0,0,0, 0,0,1.0,0, 151.0,-151.0,262.0,1}; //setting in column major order for glm
 	glm::mat4 viewMat = glm::make_mat4(view);
-	const float *t = (const float*)glm::value_ptr(viewMat);
+*/	const float *t = (const float*)glm::value_ptr(viewMat);
 	cout << "View Matrix" <<endl;
         for (int i = 0; i < 4; ++i){
 		for(int j=0;j<4;j++)
@@ -482,9 +482,9 @@ void top_level_task(const Task *task,
 		cout<<endl;
                         }
 	//glm::mat4 projMat = glm::perspective(glm::radians(5.0f), (float) width / (float)height, nearPlane, farPlane);
-	//glm::mat4 projMat = glm::perspective(glm::radians(angle), (float) width / (float)height, nearPlane, farPlane);
-	//glm::mat4 projMat = glm::ortho((float)-200, (float)200, (float)-490, (float)500, (float)-200, (float)200);
-	glm::mat4 projMat = glm::mat4(1.0f);
+	glm::mat4 projMat = glm::perspective(glm::radians(angle), (float) width / (float)height, nearPlane, farPlane);
+	//glm::mat4 projMat = glm::ortho((float)-200, (float)200, (float)-200, (float)200, (float)-1, (float)-350);
+	//glm::mat4 projMat = glm::mat4(1.0f);
 	const float *t1 = (const float*)glm::value_ptr(projMat);
 	cout << "Projection Matrix" << endl;
         for (int i = 0; i < 4; ++i){
@@ -493,6 +493,7 @@ void top_level_task(const Task *task,
 		cout<<endl;
                         }
 	glm::mat4 mvp = projMat * viewMat * modelMat; // Remember, matrix multiplication is the other way around
+	//mvp = mvp /(float)width;
 	const float *t2 = (const float*)glm::value_ptr(mvp);
         cout << "PVM Matrix" << endl;
         for (int i = 0; i < 4; ++i){
@@ -500,12 +501,11 @@ void top_level_task(const Task *task,
                 	printf("%12.5f\t",t2[4*j+i]);
 		cout<<endl;
                         }
-	mvp = mvp /(float)width;
 	glm::mat4 inverseMVP = glm::inverse(mvp);
-	//glm::mat4 transposeInverseMVP = glm::transpose(inverseMVP);
+	glm::mat4 transposeInverseMVP = glm::transpose(inverseMVP);
 
 	Movement mov;
-	const float *inverseMVPSource = (const float*)glm::value_ptr(inverseMVP);
+	const float *inverseMVPSource = (const float*)glm::value_ptr(transposeInverseMVP);
 	cout << "Inverse PVM matrix" << endl;
 	for (int i = 0; i < 16; ++i){
     		mov.invPVM[i] = inverseMVPSource[i];

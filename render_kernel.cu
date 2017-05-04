@@ -225,7 +225,14 @@ void d_render(int imageW, int imageH,
 //		printf("x:%d, y:%d, u:%f, v:%f\n",x,y,u,v);
 //		printf("EyeRay.o:<%f,%f,%f>  EyeRay.d:<%f,%f,%f>\n",eyeRay.o.x,eyeRay.o.y,eyeRay.o.z,eyeRay.d.x,eyeRay.d.y,eyeRay.d.z);
 //	}
+	auto printfloat3 = [](float3 f)->void{printf("{%f,%f,%f}",f.x,f.y,f.z);};
 	int hit = intersectBoxAlt(eyeRay, minBound, maxBound, &tnear, &tfar);
+	if((x==0 && y==0) || (x==499 && y==0) || (x==0 && y==499) || (x==499 & y==499) || (x==249 && y==249))
+	{
+		printf("EyeRay(%d,%d)\norigin=:",x,y);
+		printfloat3(eyeRay.o);std::cout<<"\ndirection=";printfloat3(eyeRay.d);
+		std::cout<<"\nHit:"<<hit<<std::endl;
+	}
 //	float4 cols[] = { 	// Hard-coded transfer function (Fixme)
 //			make_float4(0.0, 0.0, 0.0, 0.00),
 //			make_float4(0.0, 0.5, 0.0, 0.05),
@@ -521,6 +528,11 @@ void d_render(int imageW, int imageH,
 		float t = tnear;
 		float3 pos = (eyeRay.o + eyeRay.d*tnear - minBound);
 		float3 step = eyeRay.d*tstep;
+	if((x==0 && y==0) || (x==499 && y==0) || (x==0 && y==499) || (x==499 & y==499) || (x==249 && y==249))
+	{
+		printf("EyeRay(%d,%d)\norigin=:",x,y);
+		printfloat3(eyeRay.o);std::cout<<"\ndirection=";printfloat3(eyeRay.d);printf("\npos:");printfloat3(pos);
+	}
 
 		for (int i=0; i<maxSteps; i++){
 //			if(pos.x< boxMax.x && pos.x >= boxMin.x && pos.y< boxMax.y && pos.y >= boxMin.y && pos.z< boxMax.z && pos.z >= boxMin.z){
@@ -560,13 +572,22 @@ void d_render(int imageW, int imageH,
 //			sum.x += 0.1
 
 			t += tstep;
-			if (t > tfar) break;
+			if (t > tfar){
+ 
+				break;
+			}
 			pos += step;
-		}
+		}//end for
+	if(t<=tfar)
+		pos-=step;
+	if((x==0 && y==0) || (x==499 && y==0) || (x==0 && y==499) || (x==499 & y==499) || (x==249 && y==249))
+	{
+		printf("\nLastpos:");printfloat3(pos);std::cout<<std::endl;
+	}
 
 		//std::cout << "CHECK 6" << std::endl;
 		drawPixel(imgPtr,x,y,imageW,(float)sum.x*brightness,(float)sum.y*brightness,(float)sum.z*brightness,(float)sum.w);
-	}
+	}//end if(hit)
 }
 
 
